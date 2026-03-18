@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react'
-import { loadSession, clearSession, startActivityTracking, revalidateSession } from './auth/auth.js'
+import { loadSession, clearSession, startActivityTracking } from './auth/auth.js'
 import Login from './auth/Login.jsx'
 import TopBar from './components/TopBar.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import Toast from './components/Toast.jsx'
 import { GerenciaHeader } from './gerencia/GerenciaUI.jsx'
-import {
-  podeRegistrarReclamacoes, podeEmitirDocumentos,
-  podeCriarUsuarios, podeVerLogs, podeJulgarDefesas,
-} from './gerencia/gerencia.js'
+import { podeRegistrarReclamacoes } from './gerencia/gerencia.js'
 
 import Dashboard from './pages/Dashboard.jsx'
 import RegistrosScreen from './pages/registros/RegistrosScreen.jsx'
 import PrazosScreen from './pages/registros/PrazosScreen.jsx'
+import CancelamentosScreen from './pages/registros/CancelamentosScreen.jsx'
 import ReclamacoesScreen from './pages/reclamacoes/ReclamacoesScreen.jsx'
 import NovaReclamacao from './pages/reclamacoes/NovaReclamacao.jsx'
 import DefesasScreen from './pages/defesas/DefesasScreen.jsx'
@@ -32,16 +30,9 @@ export default function App() {
   const [carregando, setCarregando]     = useState(true)
 
   useEffect(() => {
-    async function init() {
-      const sessao = loadSession()
-      if (sessao) {
-        // Revalida dados do banco para garantir role/cargo/foto atualizados
-        const revalidado = await revalidateSession(sessao)
-        setUsuario(revalidado)
-      }
-      setCarregando(false)
-    }
-    init()
+    const sessao = loadSession()
+    if (sessao) setUsuario(sessao)
+    setCarregando(false)
   }, [])
 
   useEffect(() => {
@@ -55,27 +46,6 @@ export default function App() {
   }
 
   function navegar(pag, params = null) {
-    // Guard de rotas — bloqueia acesso direto a páginas sem permissão
-    if (pag === 'nova-reclamacao' && !podeRegistrarReclamacoes(usuario)) {
-      mostrarToast('Acesso restrito a Balcão e Administração', 'erro')
-      return
-    }
-    if ((pag === 'nova-notificacao' || pag === 'novo-auto') && !podeEmitirDocumentos(usuario)) {
-      mostrarToast('Acesso restrito a Fiscais', 'erro')
-      return
-    }
-    if (pag === 'admin' && !podeCriarUsuarios(usuario)) {
-      mostrarToast('Acesso restrito', 'erro')
-      return
-    }
-    if (pag === 'auditoria' && !podeVerLogs(usuario)) {
-      mostrarToast('Acesso restrito', 'erro')
-      return
-    }
-    if (pag === 'defesas' && !podeJulgarDefesas(usuario)) {
-      mostrarToast('Acesso restrito', 'erro')
-      return
-    }
     setPaginaState(pag)
     setPaginaParams(params)
     window.scrollTo(0, 0)
@@ -89,7 +59,7 @@ export default function App() {
   function handleLogout() {
     clearSession()
     setUsuario(null)
-    setPaginaState('dashboard')
+    navegar('dashboard')
   }
 
   if (carregando) {
@@ -113,24 +83,14 @@ export default function App() {
       case 'dashboard':        return <Dashboard {...props} />
       case 'registros':        return <RegistrosScreen {...props} />
       case 'prazos':           return <PrazosScreen {...props} />
+      case 'cancelamentos':    return <CancelamentosScreen {...props} />
       case 'reclamacoes':      return <ReclamacoesScreen {...props} />
-      case 'nova-reclamacao':
-        // Dupla verificação — guard no nível da rota E no componente
-        if (!podeRegistrarReclamacoes(usuario)) return <Dashboard {...props} />
-        return <NovaReclamacao {...props} />
+      case 'nova-reclamacao':  return <NovaReclamacao {...props} />
       case 'defesas':          return <DefesasScreen {...props} />
-      case 'nova-notificacao':
-        if (!podeEmitirDocumentos(usuario)) return <Dashboard {...props} />
-        return <FormNotificacao {...props} params={paginaParams} />
-      case 'novo-auto':
-        if (!podeEmitirDocumentos(usuario)) return <Dashboard {...props} />
-        return <FormAutoInfracao {...props} notificacao={paginaParams} />
-      case 'admin':
-        if (!podeCriarUsuarios(usuario)) return <Dashboard {...props} />
-        return <AdminScreen {...props} />
-      case 'auditoria':
-        if (!podeVerLogs(usuario)) return <Dashboard {...props} />
-        return <AuditoriaScreen {...props} />
+      case 'nova-notificacao': return <FormNotificacao {...props} params={paginaParams} />
+      case 'novo-auto':        return <FormAutoInfracao {...props} notificacao={paginaParams} />
+      case 'admin':            return <AdminScreen {...props} />
+      case 'auditoria':        return <AuditoriaScreen {...props} />
       case 'perfil':           return <PerfilModal {...props} />
       case 'mais':             return <MaisScreen {...props} />
       default:                 return <Dashboard {...props} />
@@ -162,13 +122,12 @@ export default function App() {
 function getAbasNav(u) {
   const role = u?.role
   const base = [{ id: 'dashboard', label: 'Início', icone: 'home' }]
-
   if (role === 'fiscal') return [
     ...base,
-    { id: 'registros',   label: 'Registros',  icone: 'file' },
-    { id: 'reclamacoes', label: 'Reclamações', icone: 'phone' },
-    { id: 'prazos',      label: 'Prazos',      icone: 'clock' },
-    { id: 'mais',        label: 'Mais',        icone: 'settings' },
+    { id: 'registros',      label: 'Registros',  icone: 'file' },
+    { id: 'reclamacoes',    label: 'Reclamações', icone: 'phone' },
+    { id: 'prazos',         label: 'Prazos',      icone: 'clock' },
+    { id: 'mais',           label: 'Mais',        icone: 'settings' },
   ]
   if (role === 'balcao') return [
     ...base,
@@ -185,10 +144,11 @@ function getAbasNav(u) {
   ]
   if (role === 'gerencia') return [
     ...base,
-    { id: 'registros',   label: 'Registros',  icone: 'file' },
-    { id: 'reclamacoes', label: 'Reclamações', icone: 'phone' },
-    { id: 'defesas',     label: 'Defesas',     icone: 'shield' },
-    { id: 'mais',        label: 'Mais',        icone: 'settings' },
+    { id: 'registros',      label: 'Registros',  icone: 'file' },
+    { id: 'reclamacoes',    label: 'Reclamações', icone: 'phone' },
+    { id: 'defesas',        label: 'Defesas',     icone: 'shield' },
+    { id: 'cancelamentos',  label: 'Cancelar',    icone: 'x' },
+    { id: 'mais',           label: 'Mais',        icone: 'settings' },
   ]
   return [
     ...base,

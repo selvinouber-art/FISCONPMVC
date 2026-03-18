@@ -4,13 +4,15 @@ import Icon from '../../components/Icon.jsx'
 import { statusCores } from '../../config/theme.js'
 import { STATUS_REGISTROS } from '../../config/constants.js'
 import { isFiscal, podeEmitirDocumentos, isAdminGeral } from '../../gerencia/gerencia.js'
+import RegistroDetalhe from './RegistroDetalhe.jsx'
 
 export default function RegistrosScreen({ usuario, setPagina, mostrarToast }) {
-  const [registros, setRegistros] = useState([])
-  const [busca, setBusca] = useState('')
+  const [registros, setRegistros]     = useState([])
+  const [busca, setBusca]             = useState('')
   const [filtroStatus, setFiltroStatus] = useState('')
-  const [filtroTipo, setFiltroTipo] = useState('')
-  const [carregando, setCarregando] = useState(true)
+  const [filtroTipo, setFiltroTipo]   = useState('')
+  const [carregando, setCarregando]   = useState(true)
+  const [detalheId, setDetalheId]     = useState(null)
 
   useEffect(() => { carregar() }, [usuario])
 
@@ -19,7 +21,6 @@ export default function RegistrosScreen({ usuario, setPagina, mostrarToast }) {
       const dados = await query('records', q => {
         let qr = q.order('created_at', { ascending: false })
         if (!isAdminGeral(usuario)) qr = qr.eq('gerencia', usuario.gerencia)
-        // Fiscal só vê os próprios registros
         if (isFiscal(usuario)) qr = qr.eq('matricula', usuario.matricula)
         return qr
       })
@@ -31,6 +32,25 @@ export default function RegistrosScreen({ usuario, setPagina, mostrarToast }) {
     }
   }
 
+  // Se há um detalhe aberto, renderiza o detalhe
+  if (detalheId) {
+    return (
+      <RegistroDetalhe
+        registroId={detalheId}
+        usuario={usuario}
+        mostrarToast={mostrarToast}
+        setPagina={(pag, params) => {
+          if (pag === 'registros') {
+            setDetalheId(null)
+            carregar()
+          } else {
+            setPagina(pag, params)
+          }
+        }}
+      />
+    )
+  }
+
   const filtrados = registros.filter(r => {
     const buscaOk = !busca ||
       r.num?.toLowerCase().includes(busca.toLowerCase()) ||
@@ -38,7 +58,7 @@ export default function RegistrosScreen({ usuario, setPagina, mostrarToast }) {
       r.addr?.toLowerCase().includes(busca.toLowerCase()) ||
       r.cpf?.includes(busca)
     const statusOk = !filtroStatus || r.status === filtroStatus
-    const tipoOk = !filtroTipo || r.type === filtroTipo
+    const tipoOk   = !filtroTipo   || r.type   === filtroTipo
     return buscaOk && statusOk && tipoOk
   })
 
@@ -72,7 +92,6 @@ export default function RegistrosScreen({ usuario, setPagina, mostrarToast }) {
         <input type="text" placeholder="Número, nome, endereço, CPF..." value={busca} onChange={e => setBusca(e.target.value)} style={{ paddingLeft: '36px' }} />
       </div>
 
-      {/* Filtros */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
         <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={{ flex: 1, fontSize: '0.8rem' }}>
           <option value="">Todos os tipos</option>
@@ -95,19 +114,17 @@ export default function RegistrosScreen({ usuario, setPagina, mostrarToast }) {
         <div style={{ background: '#fff', border: '2px dashed #E2E8F0', borderRadius: '14px', padding: '32px', textAlign: 'center', color: '#94A3B8' }}>
           <Icon name="file" size={32} color="#CBD5E0" style={{ margin: '0 auto 12px' }} />
           <div>Nenhum registro encontrado</div>
-          {podeEmitirDocumentos(usuario) && (
-            <button onClick={() => setPagina('nova-notificacao')} style={{ marginTop: '12px', background: '#1A56DB', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 20px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}>
-              + Nova Notificação
-            </button>
-          )}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {filtrados.map(reg => {
             const sc = statusCores[reg.status] || { fundo: '#F1F5F9', cor: '#6B7280' }
             return (
-              <div key={reg.id} style={{ background: '#fff', border: '2px solid #E2E8F0', borderRadius: '14px', padding: '14px', cursor: 'pointer' }}
-                onClick={() => setPagina(`registro-${reg.id}`)}>
+              <div
+                key={reg.id}
+                style={{ background: '#fff', border: '2px solid #E2E8F0', borderRadius: '14px', padding: '14px', cursor: 'pointer' }}
+                onClick={() => setDetalheId(reg.id)}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                   <div>
                     <div style={{ fontWeight: '700', fontSize: '0.9rem', color: '#1E293B' }}>{reg.num}</div>
@@ -120,27 +137,12 @@ export default function RegistrosScreen({ usuario, setPagina, mostrarToast }) {
                     {reg.status}
                   </span>
                 </div>
-                <div style={{ fontSize: '0.82rem', color: '#374151', marginBottom: '4px' }}>
-                  {reg.owner || 'Proprietário não informado'}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
-                  {reg.addr}{reg.bairro ? ` — ${reg.bairro}` : ''}
-                </div>
+                <div style={{ fontSize: '0.82rem', color: '#374151', marginBottom: '4px' }}>{reg.owner || 'Proprietário não informado'}</div>
+                <div style={{ fontSize: '0.75rem', color: '#64748B' }}>{reg.addr}{reg.bairro ? ` — ${reg.bairro}` : ''}</div>
                 {reg.prazo && (
                   <div style={{ fontSize: '0.72rem', color: '#B45309', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Icon name="clock" size={12} color="#B45309" />
                     Prazo: {reg.prazo}
-                  </div>
-                )}
-                {/* Botão de auto de infração — só fiscal */}
-                {podeEmitirDocumentos(usuario) && reg.type === 'notif' && reg.status === 'Pendente' && (
-                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #F1F5F9' }}>
-                    <button
-                      onClick={e => { e.stopPropagation(); setPagina('novo-auto', reg) }}
-                      style={{ background: '#FEE2E2', color: '#B91C1C', border: 'none', borderRadius: '8px', padding: '6px 14px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer' }}
-                    >
-                      ⚠️ Lavrar Auto de Infração
-                    </button>
                   </div>
                 )}
               </div>
