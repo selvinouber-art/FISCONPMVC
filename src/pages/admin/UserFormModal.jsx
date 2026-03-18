@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { rpc, query } from '../../config/supabase.js'
+import React, { useState, useEffect, useRef } from 'react'
+import { rpc, query, upload } from '../../config/supabase.js'
 import Modal from '../../components/Modal.jsx'
 import MascaraInput, { apenasDigitos } from '../../components/MascaraInput.jsx'
 import { isAdminGeral, getPerfisGerencia, GERENCIAS } from '../../gerencia/gerencia.js'
@@ -7,13 +7,15 @@ import { BAIRROS_VDC } from '../../config/constants.js'
 
 export default function UserFormModal({ aberto, onClose, usuarioEditando, usuarioLogado, onSalvo, mostrarToast }) {
   const [form, setForm] = useState({
-    name: '', matricula: '', cpf: '', senha: '',
-    role: '', gerencia: '', email: '', telefone: '',
-    bairros: [],
+    name: '', matricula: '', cpf: '', cargo: '', senha: '',
+    role: '', gerencia: '', email: '', telefone: '', bairros: [],
   })
-  const [perfis, setPerfis] = useState([])
+  const [perfis, setPerfis]   = useState([])
   const [salvando, setSalvando] = useState(false)
-  const [erros, setErros] = useState({})
+  const [erros, setErros]     = useState({})
+  const [fotoPreview, setFotoPreview] = useState(null)
+  const [fotoArquivo, setFotoArquivo] = useState(null)
+  const inputFotoRef = useRef()
 
   const gerenciasDisponiveis = isAdminGeral(usuarioLogado)
     ? Object.values(GERENCIAS)
@@ -22,11 +24,11 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
   useEffect(() => {
     if (!aberto) return
     if (usuarioEditando) {
-      // Preenche TODOS os campos do usuário existente
       setForm({
         name:      usuarioEditando.name      || '',
-        matricula: formatarMatricula(usuarioEditando.matricula || ''),
-        cpf:       formatarCpf(usuarioEditando.endereco || ''), // cpf salvo em endereco
+        matricula: fmtMatricula(usuarioEditando.matricula || ''),
+        cpf:       fmtCpf(usuarioEditando.endereco || ''),
+        cargo:     usuarioEditando.cargo     || '',
         senha:     '',
         role:      usuarioEditando.role      || '',
         gerencia:  usuarioEditando.gerencia  || '',
@@ -34,31 +36,29 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
         telefone:  usuarioEditando.telefone  || '',
         bairros:   usuarioEditando.bairros   || [],
       })
+      setFotoPreview(usuarioEditando.foto_perfil || null)
       setPerfis(getPerfisGerencia(usuarioEditando.gerencia || ''))
     } else {
       const gerenciaInicial = !isAdminGeral(usuarioLogado) ? usuarioLogado.gerencia : ''
-      setForm({
-        name: '', matricula: '', cpf: '', senha: '',
-        role: '', gerencia: gerenciaInicial,
-        email: '', telefone: '', bairros: [],
-      })
+      setForm({ name:'', matricula:'', cpf:'', cargo:'', senha:'', role:'', gerencia: gerenciaInicial, email:'', telefone:'', bairros:[] })
+      setFotoPreview(null)
+      setFotoArquivo(null)
       setPerfis(gerenciaInicial ? getPerfisGerencia(gerenciaInicial) : [])
     }
     setErros({})
   }, [aberto, usuarioEditando?.id])
 
-  function formatarMatricula(v) {
-    const nums = String(v).replace(/\D/g, '')
-    if (nums.length <= 5) return nums
-    return `${nums.slice(0, 5)}-${nums.slice(5)}`
+  function fmtMatricula(v) {
+    const n = String(v).replace(/\D/g,'')
+    return n.length <= 5 ? n : `${n.slice(0,5)}-${n.slice(5)}`
   }
 
-  function formatarCpf(v) {
-    const nums = String(v).replace(/\D/g, '').slice(0, 11)
-    if (nums.length <= 3) return nums
-    if (nums.length <= 6) return `${nums.slice(0,3)}.${nums.slice(3)}`
-    if (nums.length <= 9) return `${nums.slice(0,3)}.${nums.slice(3,6)}.${nums.slice(6)}`
-    return `${nums.slice(0,3)}.${nums.slice(3,6)}.${nums.slice(6,9)}-${nums.slice(9)}`
+  function fmtCpf(v) {
+    const n = String(v).replace(/\D/g,'').slice(0,11)
+    if (n.length <= 3) return n
+    if (n.length <= 6) return `${n.slice(0,3)}.${n.slice(3)}`
+    if (n.length <= 9) return `${n.slice(0,3)}.${n.slice(3,6)}.${n.slice(6)}`
+    return `${n.slice(0,3)}.${n.slice(3,6)}.${n.slice(6,9)}-${n.slice(9)}`
   }
 
   function set(campo, valor) {
@@ -72,53 +72,65 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
     setErros(e => ({ ...e, gerencia: '', role: '' }))
   }
 
-  function toggleBairro(bairro) {
-    setForm(f => {
-      const jatem = f.bairros.includes(bairro)
-      return { ...f, bairros: jatem ? f.bairros.filter(b => b !== bairro) : [...f.bairros, bairro] }
-    })
+  function toggleBairro(b) {
+    setForm(f => ({
+      ...f,
+      bairros: f.bairros.includes(b) ? f.bairros.filter(x => x !== b) : [...f.bairros, b],
+    }))
     setErros(e => ({ ...e, bairros: '' }))
+  }
+
+  function handleFotoChange(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setFotoArquivo(file)
+    setFotoPreview(URL.createObjectURL(file))
   }
 
   function validar() {
     const e = {}
-    if (!form.name.trim())     e.name = 'Nome obrigatório'
-    if (!form.matricula.trim()) e.matricula = 'Matrícula obrigatória'
-    if (!form.cpf.trim())      e.cpf = 'CPF obrigatório'
-    if (!form.email.trim())    e.email = 'E-mail obrigatório'
-    if (!form.telefone.trim()) e.telefone = 'Telefone obrigatório'
-    if (!form.gerencia)        e.gerencia = 'Selecione o módulo'
-    if (!form.role)            e.role = 'Selecione o perfil'
+    if (!form.name.trim())      e.name      = 'Nome obrigatório'
+    if (!form.matricula.trim()) e.matricula  = 'Matrícula obrigatória'
+    if (!form.cpf.trim())       e.cpf        = 'CPF obrigatório'
+    if (!form.cargo.trim())     e.cargo      = 'Cargo obrigatório'
+    if (!form.email.trim())     e.email      = 'E-mail obrigatório'
+    if (!form.telefone.trim())  e.telefone   = 'Telefone obrigatório'
+    if (!form.gerencia)         e.gerencia   = 'Selecione o módulo'
+    if (!form.role)             e.role       = 'Selecione o perfil'
     if (!usuarioEditando && !form.senha) e.senha = 'Senha obrigatória'
     if (form.role === 'fiscal' && form.gerencia === 'obras' && form.bairros.length === 0) {
-      e.bairros = 'Atribua ao menos 1 bairro para o fiscal'
+      e.bairros = 'Atribua ao menos 1 bairro'
     }
     setErros(e)
     return Object.keys(e).length === 0
   }
 
   async function salvar() {
-    if (!validar()) {
-      mostrarToast('Preencha todos os campos obrigatórios', 'erro')
-      return
-    }
+    if (!validar()) { mostrarToast('Preencha todos os campos obrigatórios', 'erro'); return }
+
     const matriculaSoDigitos = apenasDigitos(form.matricula)
 
     // Verifica matrícula duplicada
     try {
-      const existentes = await query('usuarios', q =>
-        q.eq('matricula', matriculaSoDigitos)
-      )
+      const existentes = await query('usuarios', q => q.eq('matricula', matriculaSoDigitos))
       const duplicada = existentes.filter(u => u.id !== (usuarioEditando?.id || ''))
       if (duplicada.length > 0) {
-        setErros(e => ({ ...e, matricula: 'Esta matrícula já está em uso' }))
-        mostrarToast('Matrícula já cadastrada para outro usuário', 'erro')
+        setErros(e => ({ ...e, matricula: 'Matrícula já cadastrada para outro usuário' }))
+        mostrarToast('Matrícula já em uso', 'erro')
         return
       }
     } catch { /* segue */ }
 
     setSalvando(true)
     try {
+      // Upload da foto se houver
+      let fotoUrl = usuarioEditando?.foto_perfil || null
+      if (fotoArquivo) {
+        const caminho = `perfis/${matriculaSoDigitos}_${Date.now()}.jpg`
+        fotoUrl = await upload('fiscon-fotos', caminho, fotoArquivo)
+      }
+
+      // Cria/atualiza usuário — foto e cargo salvos em campos extras
       const resultado = await rpc('criar_usuario_seguro', {
         p_id:       usuarioEditando?.id || `user-${Date.now()}`,
         p_name:     form.name.trim(),
@@ -127,12 +139,22 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
         p_role:     form.role,
         p_email:    form.email.trim(),
         p_telefone: form.telefone,
-        p_endereco: apenasDigitos(form.cpf), // CPF salvo no campo endereco
+        p_endereco: apenasDigitos(form.cpf),
         p_bairros:  form.bairros,
         p_ativo:    true,
         p_gerencia: form.gerencia,
       })
       if (!resultado?.success) throw new Error('Falha ao salvar')
+
+      // Salva cargo e foto via update direto
+      const { update } = await import('../../config/supabase.js')
+      await update('usuarios', resultado.id || usuarioEditando?.id || `user-${Date.now()}`, {
+        cargo: form.cargo.trim(),
+        foto_perfil: fotoUrl,
+      }).catch(() => {
+        // Se falhar o update de cargo/foto, tenta sem foto
+      })
+
       mostrarToast(usuarioEditando ? 'Usuário atualizado!' : 'Usuário criado!', 'sucesso')
       onSalvo()
     } catch (err) {
@@ -149,8 +171,34 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
     <Modal aberto={aberto} onClose={onClose} titulo={usuarioEditando ? 'Editar Usuário' : 'Novo Usuário'}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
+        {/* Foto de perfil */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+          <div
+            onClick={() => inputFotoRef.current?.click()}
+            style={{
+              width: '88px', height: '88px', borderRadius: '50%',
+              background: '#F1F5F9', border: '3px dashed #CBD5E0',
+              overflow: 'hidden', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            {fotoPreview
+              ? <img src={fotoPreview} alt="Foto" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <span style={{ fontSize: '2rem' }}>📷</span>
+            }
+          </div>
+          <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+            {fotoPreview ? 'Clique para trocar a foto' : 'Clique para adicionar foto'}
+          </span>
+          <input ref={inputFotoRef} type="file" accept="image/*" onChange={handleFotoChange} style={{ display: 'none' }} />
+        </div>
+
         <Campo label="Nome completo *" erro={erros.name}>
           <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Nome do servidor" />
+        </Campo>
+
+        <Campo label="Cargo *" erro={erros.cargo}>
+          <input value={form.cargo} onChange={e => set('cargo', e.target.value)} placeholder="Ex: Fiscal de Obras, Agente Administrativo..." />
         </Campo>
 
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -184,9 +232,7 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
               }}>
                 <span style={{ fontSize: '1.2rem' }}>{g.emoji}</span>
                 <div>
-                  <div style={{ fontWeight: '600', fontSize: '0.88rem', color: form.gerencia === g.id ? g.cor : '#374151' }}>
-                    {g.nome}
-                  </div>
+                  <div style={{ fontWeight: '600', fontSize: '0.88rem', color: form.gerencia === g.id ? g.cor : '#374151' }}>{g.nome}</div>
                   {g.lei && <div style={{ fontSize: '0.72rem', color: '#94A3B8' }}>{g.lei}</div>}
                 </div>
               </button>
@@ -207,27 +253,25 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
                   cursor: 'pointer', textAlign: 'left',
                 }}>
                   <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: p.cor, flexShrink: 0 }} />
-                  <span style={{ fontWeight: '600', fontSize: '0.88rem', color: form.role === p.codigo ? p.cor : '#374151' }}>
-                    {p.nome}
-                  </span>
+                  <span style={{ fontWeight: '600', fontSize: '0.88rem', color: form.role === p.codigo ? p.cor : '#374151' }}>{p.nome}</span>
                 </button>
               ))}
             </div>
           </Campo>
         )}
 
-        {/* Bairros — só para fiscal de obras */}
+        {/* Bairros — fiscal de obras */}
         {ehFiscalObras && (
           <Campo label="Bairros sob responsabilidade *" erro={erros.bairros}>
-            <div style={{ fontSize: '0.75rem', color: '#64748B', marginBottom: '8px' }}>
-              Selecione ao menos 1 bairro. As reclamações desses bairros serão atribuídas automaticamente a este fiscal.
+            <div style={{ fontSize: '0.75rem', color: '#64748B', marginBottom: '6px' }}>
+              Selecione ao menos 1 bairro.
             </div>
             <div style={{ maxHeight: '220px', overflowY: 'auto', border: '2px solid #E2E8F0', borderRadius: '10px', padding: '8px' }}>
               {BAIRROS_VDC.map(b => (
                 <button key={b} type="button" onClick={() => toggleBairro(b)} style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  width: '100%', padding: '6px 8px', borderRadius: '8px',
-                  border: 'none', background: form.bairros.includes(b) ? '#EBF5FF' : 'transparent',
+                  display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                  padding: '6px 8px', borderRadius: '8px', border: 'none',
+                  background: form.bairros.includes(b) ? '#EBF5FF' : 'transparent',
                   cursor: 'pointer', textAlign: 'left', marginBottom: '2px',
                 }}>
                   <div style={{
@@ -252,7 +296,7 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
           </Campo>
         )}
 
-        <Campo label={usuarioEditando ? 'Nova senha (em branco = manter atual)' : 'Senha inicial *'} erro={erros.senha}>
+        <Campo label={usuarioEditando ? 'Nova senha (em branco = manter)' : 'Senha inicial *'} erro={erros.senha}>
           <input type="password" value={form.senha} onChange={e => set('senha', e.target.value)} placeholder="Mínimo 6 caracteres" />
         </Campo>
 

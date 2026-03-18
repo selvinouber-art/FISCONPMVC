@@ -6,8 +6,8 @@ import BottomNav from './components/BottomNav.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import Toast from './components/Toast.jsx'
 import { GerenciaHeader } from './gerencia/GerenciaUI.jsx'
+import { podeRegistrarReclamacoes } from './gerencia/gerencia.js'
 
-// Páginas
 import Dashboard from './pages/Dashboard.jsx'
 import RegistrosScreen from './pages/registros/RegistrosScreen.jsx'
 import PrazosScreen from './pages/registros/PrazosScreen.jsx'
@@ -21,10 +21,10 @@ import PerfilModal from './pages/perfil/PerfilModal.jsx'
 import MaisScreen from './pages/MaisScreen.jsx'
 
 export default function App() {
-  const [usuario, setUsuario] = useState(null)
-  const [pagina, setPaginaState] = useState('dashboard')
+  const [usuario, setUsuario]       = useState(null)
+  const [pagina, setPaginaState]    = useState('dashboard')
   const [paginaParams, setPaginaParams] = useState(null)
-  const [toast, setToast] = useState(null)
+  const [toast, setToast]           = useState(null)
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
@@ -74,7 +74,7 @@ export default function App() {
   if (!usuario) return <Login onLogin={handleLogin} />
 
   const props = { usuario, mostrarToast, setPagina: navegar }
-  const abas = getAbasNav(usuario)
+  const abas  = getAbasNav(usuario)
 
   function renderPagina() {
     switch (pagina) {
@@ -95,39 +95,28 @@ export default function App() {
 
   return (
     <div className="fiscon-layout">
-      {/* SIDEBAR — desktop apenas */}
       <div className="fiscon-sidebar">
         <Sidebar usuario={usuario} paginaAtiva={pagina} onNavegar={navegar} onLogout={handleLogout} />
       </div>
-
-      {/* ÁREA PRINCIPAL */}
       <div className="fiscon-main-area">
-        {/* TopBar — mobile e desktop */}
         <div className="fiscon-topbar">
           <TopBar usuario={usuario} onPerfil={() => navegar('perfil')} onLogout={handleLogout} />
           <GerenciaHeader gerencia={usuario.gerencia} />
         </div>
-
-        {/* Conteúdo da página */}
         <div className="fiscon-content">
           {renderPagina()}
         </div>
       </div>
-
-      {/* BOTTOM NAV — mobile apenas */}
       <div className="fiscon-bottom-nav">
         <BottomNav ativo={pagina} onNavegar={navegar} abas={abas} />
       </div>
-
-      {toast && (
-        <Toast mensagem={toast.mensagem} tipo={toast.tipo} onClose={() => setToast(null)} />
-      )}
+      {toast && <Toast mensagem={toast.mensagem} tipo={toast.tipo} onClose={() => setToast(null)} />}
     </div>
   )
 }
 
-function getAbasNav(usuario) {
-  const role = usuario?.role
+function getAbasNav(u) {
+  const role = u?.role
   const base = [{ id: 'dashboard', label: 'Início', icone: 'home' }]
 
   if (role === 'fiscal') return [
@@ -145,9 +134,10 @@ function getAbasNav(usuario) {
   ]
   if (role === 'administracao') return [
     ...base,
-    { id: 'registros',   label: 'Registros',  icone: 'file' },
-    { id: 'reclamacoes', label: 'Reclamações', icone: 'phone' },
-    { id: 'mais',        label: 'Mais',        icone: 'settings' },
+    { id: 'registros',       label: 'Registros',   icone: 'file' },
+    { id: 'reclamacoes',     label: 'Reclamações', icone: 'phone' },
+    { id: 'nova-reclamacao', label: 'Nova Rec.',   icone: 'plus' },
+    { id: 'mais',            label: 'Mais',        icone: 'settings' },
   ]
   if (role === 'gerencia') return [
     ...base,
@@ -161,6 +151,6 @@ function getAbasNav(usuario) {
     { id: 'registros',   label: 'Registros',  icone: 'file' },
     { id: 'reclamacoes', label: 'Reclamações', icone: 'phone' },
     { id: 'admin',       label: 'Usuários',   icone: 'users' },
-    { id: 'mais',        label: 'Mais',        icone: 'settings' },
+    { id: 'mais',        label: 'Mais',       icone: 'settings' },
   ]
 }

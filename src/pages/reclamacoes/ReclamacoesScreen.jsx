@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { query, update } from '../../config/supabase.js'
 import Icon from '../../components/Icon.jsx'
 import Modal from '../../components/Modal.jsx'
-import { isFiscal, isBalcao, podeAtribuirReclamacoes, podeEmitirDocumentos, isAdminGeral } from '../../gerencia/gerencia.js'
+import { isFiscal, isBalcao, isAdministracao, podeAtribuirReclamacoes, podeRegistrarReclamacoes, isAdminGeral } from '../../gerencia/gerencia.js'
 
 const STATUS_INFO = {
   nova:           { fundo: '#FEE2E2', cor: '#B91C1C', label: 'Nova' },
@@ -13,29 +13,29 @@ const STATUS_INFO = {
 
 export default function ReclamacoesScreen({ usuario, setPagina, mostrarToast }) {
   const [reclamacoes, setReclamacoes] = useState([])
-  const [fiscais, setFiscais] = useState([])
-  const [busca, setBusca] = useState('')
+  const [fiscais, setFiscais]         = useState([])
+  const [busca, setBusca]             = useState('')
   const [filtroStatus, setFiltroStatus] = useState('')
-  const [carregando, setCarregando] = useState(true)
+  const [carregando, setCarregando]   = useState(true)
   const [selecionada, setSelecionada] = useState(null)
-  const [novoFiscal, setNovoFiscal] = useState('')
-  const [atribuindo, setAtribuindo] = useState(false)
+  const [novoFiscal, setNovoFiscal]   = useState('')
+  const [atribuindo, setAtribuindo]   = useState(false)
+
+  const podeCriar = podeRegistrarReclamacoes(usuario)
 
   useEffect(() => { carregar() }, [usuario])
 
   async function carregar() {
     try {
-      // Reclamações
       const dados = await query('reclamacoes', q => {
         let qr = q.order('created_at', { ascending: false })
         if (!isAdminGeral(usuario)) qr = qr.eq('gerencia', usuario.gerencia)
-        // Fiscal só vê as atribuídas para ele
+        // Fiscal só vê as atribuídas a ele
         if (isFiscal(usuario)) qr = qr.eq('fiscal_matricula', usuario.matricula)
         return qr
       })
       setReclamacoes(dados)
 
-      // Fiscais do módulo para atribuição
       if (podeAtribuirReclamacoes(usuario)) {
         const fs = await query('usuarios', q =>
           q.eq('gerencia', usuario.gerencia).eq('role', 'fiscal').eq('ativo', true).order('name')
@@ -63,11 +63,8 @@ export default function ReclamacoesScreen({ usuario, setPagina, mostrarToast }) 
       mostrarToast(`Atribuída para ${fiscal.name}`, 'sucesso')
       setSelecionada(null)
       carregar()
-    } catch {
-      mostrarToast('Erro ao atribuir', 'erro')
-    } finally {
-      setAtribuindo(false)
-    }
+    } catch { mostrarToast('Erro ao atribuir', 'erro') }
+    finally { setAtribuindo(false) }
   }
 
   const filtradas = reclamacoes.filter(r => {
@@ -86,19 +83,27 @@ export default function ReclamacoesScreen({ usuario, setPagina, mostrarToast }) 
         <h2 style={{ fontSize: '1.2rem', color: '#1E293B', margin: 0 }}>
           {isFiscal(usuario) ? 'Minhas Reclamações' : 'Reclamações'}
         </h2>
-        <button onClick={() => setPagina('nova-reclamacao')} style={{
-          background: '#B91C1C', color: '#fff', border: 'none', borderRadius: '10px',
-          padding: '8px 14px', fontSize: '0.85rem', fontWeight: '600',
-          display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
-        }}>
-          <Icon name="plus" size={16} color="#fff" /> Nova
-        </button>
+        {podeCriar && (
+          <button onClick={() => setPagina('nova-reclamacao')} style={{
+            background: '#B91C1C', color: '#fff', border: 'none', borderRadius: '10px',
+            padding: '8px 14px', fontSize: '0.85rem', fontWeight: '600',
+            display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
+          }}>
+            <Icon name="plus" size={16} color="#fff" /> Nova
+          </button>
+        )}
       </div>
 
-      {/* Busca */}
+      {/* Aviso para fiscal */}
+      {isFiscal(usuario) && (
+        <div style={{ background: '#EBF5FF', border: '1px solid #BFDBFE', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '0.8rem', color: '#1A56DB' }}>
+          ℹ️ Você visualiza apenas as reclamações atribuídas a você pelo Balcão ou Administração.
+        </div>
+      )}
+
       <div style={{ position: 'relative', marginBottom: '12px' }}>
         <Icon name="search" size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-        <input type="text" placeholder="Buscar reclamação..." value={busca} onChange={e => setBusca(e.target.value)} style={{ paddingLeft: '36px' }} />
+        <input type="text" placeholder="Buscar..." value={busca} onChange={e => setBusca(e.target.value)} style={{ paddingLeft: '36px' }} />
       </div>
 
       <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)} style={{ marginBottom: '16px', fontSize: '0.8rem' }}>
@@ -114,7 +119,7 @@ export default function ReclamacoesScreen({ usuario, setPagina, mostrarToast }) 
         <p style={{ color: '#94A3B8', textAlign: 'center', padding: '32px' }}>Carregando...</p>
       ) : filtradas.length === 0 ? (
         <div style={{ background: '#fff', border: '2px dashed #E2E8F0', borderRadius: '14px', padding: '32px', textAlign: 'center', color: '#94A3B8' }}>
-          Nenhuma reclamação encontrada
+          {isFiscal(usuario) ? 'Nenhuma reclamação atribuída a você ainda.' : 'Nenhuma reclamação encontrada.'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -131,19 +136,13 @@ export default function ReclamacoesScreen({ usuario, setPagina, mostrarToast }) 
                     {sc.label}
                   </span>
                 </div>
-                <div style={{ fontSize: '0.82rem', color: '#374151', marginBottom: '2px' }}>
-                  {rec.reclamado || 'Reclamado não informado'}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
-                  {rec.endereco}{rec.bairro ? ` — ${rec.bairro}` : ''}
-                </div>
+                <div style={{ fontSize: '0.82rem', color: '#374151', marginBottom: '2px' }}>{rec.reclamado || 'Reclamado não informado'}</div>
+                <div style={{ fontSize: '0.75rem', color: '#64748B' }}>{rec.endereco}{rec.bairro ? ` — ${rec.bairro}` : ''}</div>
                 <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: '0.72rem', color: rec.fiscal ? '#166534' : '#94A3B8' }}>
                     {rec.fiscal ? `👤 ${rec.fiscal}` : '⚪ Sem fiscal atribuído'}
                   </span>
-                  {rec.prioridade === 'urgente' && (
-                    <span style={{ fontSize: '0.68rem', color: '#B91C1C', fontWeight: '700' }}>🔴 URGENTE</span>
-                  )}
+                  {rec.prioridade === 'urgente' && <span style={{ fontSize: '0.68rem', color: '#B91C1C', fontWeight: '700' }}>🔴 URGENTE</span>}
                 </div>
               </div>
             )
@@ -151,15 +150,14 @@ export default function ReclamacoesScreen({ usuario, setPagina, mostrarToast }) 
         </div>
       )}
 
-      {/* Modal de detalhe + atribuição */}
+      {/* Modal de detalhe */}
       <Modal aberto={!!selecionada} onClose={() => setSelecionada(null)} titulo={`Reclamação — ${selecionada?.protocolo || ''}`}>
         {selecionada && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Info */}
-            <InfoBloco label="Reclamado" valor={selecionada.reclamado} />
-            <InfoBloco label="Endereço" valor={`${selecionada.endereco || ''}${selecionada.bairro ? ` — ${selecionada.bairro}` : ''}`} />
+            <InfoBloco label="Reclamado"  valor={selecionada.reclamado} />
+            <InfoBloco label="Endereço"   valor={`${selecionada.endereco || ''}${selecionada.bairro ? ` — ${selecionada.bairro}` : ''}`} />
             {selecionada.reclamante && <InfoBloco label="Reclamante" valor={`${selecionada.reclamante}${selecionada.telefone ? ` — ${selecionada.telefone}` : ''}`} />}
-            <InfoBloco label="Origem" valor={selecionada.origem} />
+            <InfoBloco label="Origem"     valor={selecionada.origem} />
             {selecionada.descricao && (
               <div>
                 <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginBottom: '4px' }}>Descrição</div>
@@ -169,7 +167,7 @@ export default function ReclamacoesScreen({ usuario, setPagina, mostrarToast }) 
               </div>
             )}
 
-            {/* Atribuição de fiscal */}
+            {/* Atribuição */}
             {podeAtribuirReclamacoes(usuario) && fiscais.length > 0 && (
               <div>
                 <div style={{ fontSize: '0.82rem', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
@@ -183,24 +181,20 @@ export default function ReclamacoesScreen({ usuario, setPagina, mostrarToast }) 
                   background: '#1A56DB', color: '#fff', border: 'none', borderRadius: '10px',
                   padding: '10px', fontWeight: '700', fontSize: '0.88rem', cursor: 'pointer', width: '100%',
                 }}>
-                  {atribuindo ? 'Salvando...' : (selecionada.fiscal ? 'Reatribuir' : 'Atribuir Fiscal')}
+                  {atribuindo ? 'Salvando...' : (selecionada.fiscal ? 'Reatribuir Fiscal' : 'Atribuir Fiscal')}
                 </button>
               </div>
             )}
 
-            {/* Ações do fiscal: partir para notificação */}
+            {/* Ações do fiscal */}
             {isFiscal(usuario) && selecionada.fiscal_matricula === usuario.matricula && (
               <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '14px', display: 'flex', gap: '10px' }}>
-                <button
-                  onClick={() => { setSelecionada(null); setPagina('nova-notificacao', { fromReclamacao: selecionada }) }}
-                  style={{ flex: 1, background: '#EBF5FF', color: '#1A56DB', border: 'none', borderRadius: '10px', padding: '10px', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}
-                >
+                <button onClick={() => { setSelecionada(null); setPagina('nova-notificacao', { fromReclamacao: selecionada }) }}
+                  style={{ flex: 1, background: '#EBF5FF', color: '#1A56DB', border: 'none', borderRadius: '10px', padding: '10px', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
                   📋 Gerar Notificação
                 </button>
-                <button
-                  onClick={() => { setSelecionada(null); setPagina('novo-auto', { fromReclamacao: selecionada }) }}
-                  style={{ flex: 1, background: '#FEE2E2', color: '#B91C1C', border: 'none', borderRadius: '10px', padding: '10px', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}
-                >
+                <button onClick={() => { setSelecionada(null); setPagina('novo-auto', { fromReclamacao: selecionada }) }}
+                  style={{ flex: 1, background: '#FEE2E2', color: '#B91C1C', border: 'none', borderRadius: '10px', padding: '10px', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}>
                   ⚠️ Gerar Auto
                 </button>
               </div>

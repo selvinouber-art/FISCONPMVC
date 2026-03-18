@@ -1,7 +1,3 @@
-// Gerência e perfis do FISCON
-// Módulos: obras | posturas
-// Perfis: gerencia | fiscal | balcao | administracao | admin_geral
-
 export const GERENCIAS = {
   obras: {
     id: 'obras',
@@ -40,16 +36,16 @@ export const GERENCIAS = {
 
 export const PERFIS_POR_GERENCIA = {
   obras: [
-    { codigo: 'gerencia',       nome: 'Gerência',       cor: '#7E22CE', fundo: '#FDF4FF', ordem: 1 },
-    { codigo: 'fiscal',         nome: 'Fiscal',         cor: '#1A56DB', fundo: '#EBF5FF', ordem: 2 },
-    { codigo: 'balcao',         nome: 'Balcão',         cor: '#166534', fundo: '#F0FDF4', ordem: 3 },
-    { codigo: 'administracao',  nome: 'Administração',  cor: '#B45309', fundo: '#FEF3C7', ordem: 4 },
+    { codigo: 'gerencia',      nome: 'Gerência',      cor: '#7E22CE', fundo: '#FDF4FF', ordem: 1 },
+    { codigo: 'fiscal',        nome: 'Fiscal',        cor: '#1A56DB', fundo: '#EBF5FF', ordem: 2 },
+    { codigo: 'balcao',        nome: 'Balcão',        cor: '#166534', fundo: '#F0FDF4', ordem: 3 },
+    { codigo: 'administracao', nome: 'Administração', cor: '#B45309', fundo: '#FEF3C7', ordem: 4 },
   ],
   posturas: [
-    { codigo: 'gerencia',       nome: 'Gerência',       cor: '#7E22CE', fundo: '#FDF4FF', ordem: 1 },
-    { codigo: 'fiscal',         nome: 'Fiscal',         cor: '#166534', fundo: '#F0FDF4', ordem: 2 },
-    { codigo: 'balcao',         nome: 'Balcão',         cor: '#0891B2', fundo: '#ECFEFF', ordem: 3 },
-    { codigo: 'administracao',  nome: 'Administração',  cor: '#B45309', fundo: '#FEF3C7', ordem: 4 },
+    { codigo: 'gerencia',      nome: 'Gerência',      cor: '#7E22CE', fundo: '#FDF4FF', ordem: 1 },
+    { codigo: 'fiscal',        nome: 'Fiscal',        cor: '#166534', fundo: '#F0FDF4', ordem: 2 },
+    { codigo: 'balcao',        nome: 'Balcão',        cor: '#0891B2', fundo: '#ECFEFF', ordem: 3 },
+    { codigo: 'administracao', nome: 'Administração', cor: '#B45309', fundo: '#FEF3C7', ordem: 4 },
   ],
   admin_geral: [
     { codigo: 'admin', nome: 'Administrador Geral', cor: '#B45309', fundo: '#FEF3C7', ordem: 1 },
@@ -96,16 +92,25 @@ export const isFiscal        = u => u?.role === 'fiscal'
 export const isBalcao        = u => u?.role === 'balcao'
 export const isAdministracao = u => u?.role === 'administracao'
 
-export const podeCriarUsuarios       = u => isAdminGeral(u) || isGerencia(u)
-export const podeEmitirDocumentos    = u => isFiscal(u) || isAdminGeral(u)
-export const podeRegistrarReclamacoes = u => isBalcao(u) || isAdministracao(u) || isFiscal(u) || isAdminGeral(u) || isGerencia(u)
+export const podeCriarUsuarios        = u => isAdminGeral(u) || isGerencia(u)
+export const podeEmitirDocumentos     = u => isFiscal(u) || isAdminGeral(u)
+
+// APENAS Balcão e Administração podem criar reclamações
+export const podeRegistrarReclamacoes = u => isBalcao(u) || isAdministracao(u)
+
 export const podeAtribuirReclamacoes  = u => isBalcao(u) || isAdministracao(u) || isGerencia(u) || isAdminGeral(u)
-export const podeVerLogs             = u => isGerencia(u) || isAdminGeral(u)
-export const podeVerRelatorios       = u => isGerencia(u) || isAdministracao(u) || isAdminGeral(u)
-export const podeJulgarDefesas       = u => isGerencia(u) || isAdminGeral(u)
-export const podeAlterarStatus       = u => isAdministracao(u) || isGerencia(u) || isAdminGeral(u)
+export const podeVerLogs              = u => isGerencia(u) || isAdminGeral(u)
+export const podeVerRelatorios        = u => isGerencia(u) || isAdministracao(u) || isAdminGeral(u)
+export const podeJulgarDefesas        = u => isGerencia(u) || isAdminGeral(u)
+export const podeAlterarStatus        = u => isAdministracao(u) || isGerencia(u) || isAdminGeral(u)
 
 export function nomePerfil(u) {
-  const mapa = { fiscal: 'Fiscal', balcao: 'Balcão', administracao: 'Administração', gerencia: 'Gerência', admin: 'Admin Geral' }
+  const mapa = {
+    fiscal: 'Fiscal',
+    balcao: 'Balcão',
+    administracao: 'Administração',
+    gerencia: 'Gerência',
+    admin: 'Admin Geral',
+  }
   return mapa[u?.role] || u?.role || ''
 }
