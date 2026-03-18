@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { insert, upload, query } from '../config/supabase.js'
+import MascaraInput, { apenasDigitos } from '../components/MascaraInput.jsx'
 
 export default function EnviarDefesa({ registro, onVoltar }) {
   const [form, setForm] = useState({ nome: '', cpf: '', texto: '' })
@@ -28,21 +29,21 @@ export default function EnviarDefesa({ registro, onVoltar }) {
     setEnviando(true)
     setErro('')
     try {
-      // Verificar se já existe defesa pendente
-      const existente = await query('defesas', q => q.eq('record_id', registro.id).eq('status', 'pendente').limit(1))
+      const existente = await query('defesas', q =>
+        q.eq('record_id', registro.id).eq('status', 'pendente').limit(1)
+      )
       if (existente?.length > 0) {
         setErro('Já existe uma defesa pendente para este documento.')
         setEnviando(false)
         return
       }
-
       await insert('defesas', {
         id: `def-${Date.now()}`,
         gerencia: registro.gerencia,
         record_id: registro.id,
         record_num: registro.num,
         nome: form.nome,
-        cpf: form.cpf,
+        cpf: apenasDigitos(form.cpf),
         texto: form.texto,
         anexos,
         status: 'pendente',
@@ -62,7 +63,7 @@ export default function EnviarDefesa({ registro, onVoltar }) {
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>✅</div>
           <h2 style={{ color: '#166534', marginBottom: '8px' }}>Defesa Enviada!</h2>
           <p style={{ color: '#64748B', fontSize: '0.88rem', lineHeight: 1.6, marginBottom: '24px' }}>
-            Sua defesa foi recebida e será analisada pela equipe de fiscalização. Você pode consultar o resultado voltando a esta página com o mesmo código de acesso.
+            Sua defesa foi recebida e será analisada. Consulte o resultado com o mesmo código de acesso.
           </p>
           <button onClick={onVoltar} style={{ background: '#1A56DB', color: '#fff', border: 'none', borderRadius: '12px', padding: '14px 28px', fontWeight: '700', cursor: 'pointer' }}>
             Voltar à consulta
@@ -90,9 +91,11 @@ export default function EnviarDefesa({ registro, onVoltar }) {
           <Campo label="Seu nome completo *">
             <input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Nome do defensor" />
           </Campo>
+
           <Campo label="CPF">
-            <input value={form.cpf} onChange={e => setForm(f => ({ ...f, cpf: e.target.value }))} placeholder="000.000.000-00" />
+            <MascaraInput tipo="cpf" value={form.cpf} onChange={v => setForm(f => ({ ...f, cpf: v }))} />
           </Campo>
+
           <Campo label="Texto da defesa *">
             <textarea
               value={form.texto}
@@ -103,20 +106,13 @@ export default function EnviarDefesa({ registro, onVoltar }) {
             />
           </Campo>
 
-          {/* Anexos */}
           <div>
             <label style={{ fontSize: '0.82rem', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '8px' }}>
               Anexos (fotos, documentos)
             </label>
-            {anexos.length > 0 && (
-              <div style={{ marginBottom: '8px' }}>
-                {anexos.map((url, i) => (
-                  <div key={i} style={{ fontSize: '0.78rem', color: '#1A56DB', marginBottom: '4px' }}>
-                    📎 Anexo {i + 1} enviado
-                  </div>
-                ))}
-              </div>
-            )}
+            {anexos.map((url, i) => (
+              <div key={i} style={{ fontSize: '0.78rem', color: '#1A56DB', marginBottom: '4px' }}>📎 Anexo {i + 1} enviado</div>
+            ))}
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', border: '2px dashed #CBD5E0', borderRadius: '10px', cursor: 'pointer', color: '#64748B', fontSize: '0.82rem' }}>
               + Adicionar anexo
               <input type="file" accept="image/*,.pdf" onChange={handleAnexo} style={{ display: 'none' }} />
@@ -124,9 +120,7 @@ export default function EnviarDefesa({ registro, onVoltar }) {
           </div>
 
           {erro && (
-            <div style={{ background: '#FEE2E2', borderRadius: '10px', padding: '12px', color: '#B91C1C', fontSize: '0.85rem' }}>
-              {erro}
-            </div>
+            <div style={{ background: '#FEE2E2', borderRadius: '10px', padding: '12px', color: '#B91C1C', fontSize: '0.85rem' }}>{erro}</div>
           )}
 
           <button onClick={enviar} disabled={enviando} style={{
