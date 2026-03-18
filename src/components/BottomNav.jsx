@@ -1,48 +1,29 @@
 import React from 'react'
 import Icon from './Icon.jsx'
 
-// BottomNav — navegação inferior mobile
-// Exibe ícones + labels + badge de reclamações
+export default function BottomNav({ ativo, onNavegar, abas = [], badgeReclamacoes = 0 }) {
+  if (!abas.length) return null
 
-const itens = [
-  { id: 'dashboard', label: 'Início', icone: 'home' },
-  { id: 'registros', label: 'Registros', icone: 'file' },
-  { id: 'reclamacoes', label: 'Reclamações', icone: 'phone' },
-  { id: 'prazos', label: 'Prazos', icone: 'clock' },
-  { id: 'mais', label: 'Mais', icone: 'settings' },
-]
-
-export default function BottomNav({ ativo, onNavegar, badgeReclamacoes = 0 }) {
   return (
     <nav style={estilos.nav}>
-      {itens.map(item => {
+      {abas.map(item => {
         const estaAtivo = ativo === item.id
         const temBadge = item.id === 'reclamacoes' && badgeReclamacoes > 0
         return (
           <button
             key={item.id}
             onClick={() => onNavegar(item.id)}
-            style={{
-              ...estilos.botao,
-              ...(estaAtivo ? estilos.botaoAtivo : {}),
-            }}
+            style={{ ...estilos.botao, ...(estaAtivo ? estilos.botaoAtivo : {}) }}
           >
             <div style={{ position: 'relative' }}>
-              <Icon
-                name={item.icone}
-                size={22}
-                color={estaAtivo ? '#1A56DB' : '#94A3B8'}
-              />
+              <Icon name={item.icone} size={22} color={estaAtivo ? '#1A56DB' : '#94A3B8'} />
               {temBadge && (
                 <span style={estilos.badge}>
                   {badgeReclamacoes > 9 ? '9+' : badgeReclamacoes}
                 </span>
               )}
             </div>
-            <span style={{
-              ...estilos.label,
-              color: estaAtivo ? '#1A56DB' : '#94A3B8',
-            }}>
+            <span style={{ ...estilos.label, color: estaAtivo ? '#1A56DB' : '#94A3B8' }}>
               {item.label}
             </span>
           </button>
@@ -59,7 +40,7 @@ const estilos = {
     left: '50%',
     transform: 'translateX(-50%)',
     width: '100%',
-    maxWidth: '430px',
+    maxWidth: '500px',
     background: '#fff',
     borderTop: '1px solid #E2E8F0',
     display: 'flex',
@@ -79,13 +60,8 @@ const estilos = {
     borderRadius: '10px',
     flex: 1,
   },
-  botaoAtivo: {
-    background: '#EBF5FF',
-  },
-  label: {
-    fontSize: '0.65rem',
-    fontWeight: '600',
-  },
+  botaoAtivo: { background: '#EBF5FF' },
+  label: { fontSize: '0.65rem', fontWeight: '600' },
   badge: {
     position: 'absolute',
     top: '-4px',
