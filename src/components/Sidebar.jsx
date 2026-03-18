@@ -1,11 +1,15 @@
 import React from 'react'
 import Icon from './Icon.jsx'
 import { GerenciaBadge } from '../gerencia/GerenciaUI.jsx'
-import { nomePerfil, getGerencia, isAdminGeral, isGerencia, isFiscal, isAdministracao, podeJulgarDefesas, podeCriarUsuarios, podeVerRelatorios, podeVerLogs } from '../gerencia/gerencia.js'
+import {
+  nomePerfil, getGerencia,
+  isAdminGeral, isGerencia, isFiscal, isAdministracao, isBalcao,
+  podeJulgarDefesas, podeCriarUsuarios, podeVerRelatorios, podeVerLogs,
+  podeEmitirDocumentos, podeRegistrarReclamacoes,
+} from '../gerencia/gerencia.js'
 
 export default function Sidebar({ usuario, paginaAtiva, onNavegar, onLogout }) {
   const g = getGerencia(usuario.gerencia)
-
   const itens = buildItens(usuario)
 
   return (
@@ -15,23 +19,18 @@ export default function Sidebar({ usuario, paginaAtiva, onNavegar, onLogout }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
           <img
             src="https://upload.wikimedia.org/wikipedia/commons/5/57/Bras%C3%A3o_Vitoria_da_Conquista.svg"
-            alt="Brasão"
-            style={{ width: '36px', height: '36px' }}
+            alt="Brasão" style={{ width: '36px', height: '36px' }}
           />
           <div>
-            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: '700', fontSize: '1.4rem', color: '#1A56DB', lineHeight: 1 }}>
-              FISCON
-            </div>
+            <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: '700', fontSize: '1.4rem', color: '#1A56DB', lineHeight: 1 }}>FISCON</div>
             <div style={{ fontSize: '0.65rem', color: '#94A3B8', lineHeight: 1 }}>PMVC</div>
           </div>
         </div>
 
         {/* Info do usuário */}
-        <div
-          onClick={() => onNavegar('perfil')}
-          style={{ background: g.fundo, borderRadius: '10px', padding: '10px 12px', cursor: 'pointer' }}
-        >
+        <div onClick={() => onNavegar('perfil')} style={{ background: g.fundo, borderRadius: '10px', padding: '10px 12px', cursor: 'pointer' }}>
           <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#1E293B' }}>{usuario.name}</div>
+          {usuario.cargo && <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: '1px' }}>{usuario.cargo}</div>}
           <div style={{ fontSize: '0.72rem', color: g.cor, marginTop: '2px', fontWeight: '600' }}>{nomePerfil(usuario)}</div>
           <div style={{ marginTop: '6px' }}>
             <GerenciaBadge gerencia={usuario.gerencia} />
@@ -40,37 +39,25 @@ export default function Sidebar({ usuario, paginaAtiva, onNavegar, onLogout }) {
       </div>
 
       {/* Barra de gerência */}
-      <div style={{ background: g.fundo, padding: '8px 16px', borderBottom: `2px solid ${g.cor}22`, fontSize: '0.72rem', color: g.cor, fontWeight: '600' }}>
+      <div style={{ background: g.fundo, padding: '7px 16px', borderBottom: `2px solid ${g.cor}22`, fontSize: '0.72rem', color: g.cor, fontWeight: '600' }}>
         {g.emoji} {g.nome}
       </div>
 
       {/* Navegação */}
       <nav style={{ flex: 1, padding: '10px 8px', overflowY: 'auto' }}>
         {itens.map((item, i) => {
-          if (item.divisor) return <div key={i} style={{ height: '1px', background: '#F1F5F9', margin: '8px 8px' }} />
+          if (item.divisor) return <div key={i} style={{ height: '1px', background: '#F1F5F9', margin: '8px' }} />
           const ativo = paginaAtiva === item.id
           return (
-            <button
-              key={item.id}
-              onClick={() => onNavegar(item.id)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 12px',
-                borderRadius: '10px',
-                border: 'none',
-                background: ativo ? '#EBF5FF' : 'transparent',
-                color: ativo ? '#1A56DB' : '#475569',
-                fontWeight: ativo ? '700' : '500',
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                textAlign: 'left',
-                marginBottom: '2px',
-                transition: 'background 0.15s',
-              }}
-            >
+            <button key={item.id} onClick={() => onNavegar(item.id)} style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+              padding: '10px 12px', borderRadius: '10px', border: 'none',
+              background: ativo ? '#EBF5FF' : 'transparent',
+              color: ativo ? '#1A56DB' : '#475569',
+              fontWeight: ativo ? '700' : '500',
+              fontSize: '0.9rem', cursor: 'pointer', textAlign: 'left',
+              marginBottom: '2px', transition: 'background 0.15s',
+            }}>
               <Icon name={item.icone} size={18} color={ativo ? '#1A56DB' : '#94A3B8'} />
               {item.label}
             </button>
@@ -98,43 +85,41 @@ export default function Sidebar({ usuario, paginaAtiva, onNavegar, onLogout }) {
 }
 
 function buildItens(u) {
-  const role = u?.role
   const itens = [
     { id: 'dashboard', label: 'Início', icone: 'home' },
   ]
 
-  if (role !== 'balcao') {
+  // Registros — não aparece para balcão
+  if (!isBalcao(u)) {
     itens.push({ id: 'registros', label: 'Registros', icone: 'file' })
   }
-  if (role === 'fiscal') {
+
+  // Prazos — só fiscal
+  if (isFiscal(u)) {
     itens.push({ id: 'prazos', label: 'Prazos', icone: 'clock' })
   }
 
+  // Reclamações — todos veem a lista
   itens.push({ id: 'reclamacoes', label: 'Reclamações', icone: 'phone' })
-  itens.push({ id: 'nova-reclamacao', label: 'Nova Reclamação', icone: 'plus' })
 
-  if (role === 'fiscal') {
+  // Nova Reclamação — APENAS balcão e administração
+  if (podeRegistrarReclamacoes(u)) {
+    itens.push({ id: 'nova-reclamacao', label: 'Nova Reclamação', icone: 'plus' })
+  }
+
+  // Nova Notificação / Auto — só fiscal
+  if (podeEmitirDocumentos(u)) {
     itens.push({ id: 'nova-notificacao', label: 'Nova Notificação', icone: 'file' })
     itens.push({ id: 'novo-auto', label: 'Novo Auto de Infração', icone: 'alert' })
   }
 
   itens.push({ divisor: true })
 
-  if (podeJulgarDefesas(u)) {
-    itens.push({ id: 'defesas', label: 'Defesas', icone: 'shield' })
-  }
-  if (podeVerRelatorios(u)) {
-    itens.push({ id: 'relatorios', label: 'Relatórios', icone: 'chart' })
-  }
-  if (podeVerLogs(u)) {
-    itens.push({ id: 'auditoria', label: 'Auditoria / Log', icone: 'eye' })
-  }
-  if (podeCriarUsuarios(u)) {
-    itens.push({ id: 'admin', label: 'Usuários', icone: 'users' })
-  }
-  if (isAdminGeral(u)) {
-    itens.push({ id: 'config', label: 'Configurações', icone: 'settings' })
-  }
+  if (podeJulgarDefesas(u))  itens.push({ id: 'defesas',   label: 'Defesas',         icone: 'shield' })
+  if (podeVerRelatorios(u))  itens.push({ id: 'relatorios',label: 'Relatórios',       icone: 'chart' })
+  if (podeVerLogs(u))        itens.push({ id: 'auditoria', label: 'Auditoria / Log',  icone: 'eye' })
+  if (podeCriarUsuarios(u))  itens.push({ id: 'admin',     label: 'Usuários',         icone: 'users' })
+  if (isAdminGeral(u))       itens.push({ id: 'config',    label: 'Configurações',    icone: 'settings' })
 
   itens.push({ divisor: true })
   itens.push({ id: 'perfil', label: 'Meu Perfil', icone: 'user' })

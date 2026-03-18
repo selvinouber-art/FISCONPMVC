@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { rpc, query, upload } from '../../config/supabase.js'
+import { rpc, query, upload, update } from '../../config/supabase.js'
 import Modal from '../../components/Modal.jsx'
 import MascaraInput, { apenasDigitos } from '../../components/MascaraInput.jsx'
 import { isAdminGeral, getPerfisGerencia, GERENCIAS } from '../../gerencia/gerencia.js'
@@ -10,9 +10,9 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
     name: '', matricula: '', cpf: '', cargo: '', senha: '',
     role: '', gerencia: '', email: '', telefone: '', bairros: [],
   })
-  const [perfis, setPerfis]   = useState([])
-  const [salvando, setSalvando] = useState(false)
-  const [erros, setErros]     = useState({})
+  const [perfis, setPerfis]         = useState([])
+  const [salvando, setSalvando]     = useState(false)
+  const [erros, setErros]           = useState({})
   const [fotoPreview, setFotoPreview] = useState(null)
   const [fotoArquivo, setFotoArquivo] = useState(null)
   const inputFotoRef = useRef()
@@ -37,6 +37,7 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
         bairros:   usuarioEditando.bairros   || [],
       })
       setFotoPreview(usuarioEditando.foto_perfil || null)
+      setFotoArquivo(null)
       setPerfis(getPerfisGerencia(usuarioEditando.gerencia || ''))
     } else {
       const gerenciaInicial = !isAdminGeral(usuarioLogado) ? usuarioLogado.gerencia : ''
@@ -49,12 +50,12 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
   }, [aberto, usuarioEditando?.id])
 
   function fmtMatricula(v) {
-    const n = String(v).replace(/\D/g,'')
-    return n.length <= 5 ? n : `${n.slice(0,5)}-${n.slice(5)}`
+    const n = String(v).replace(/\D/g, '')
+    return n.length <= 5 ? n : `${n.slice(0, 5)}-${n.slice(5)}`
   }
 
   function fmtCpf(v) {
-    const n = String(v).replace(/\D/g,'').slice(0,11)
+    const n = String(v).replace(/\D/g, '').slice(0, 11)
     if (n.length <= 3) return n
     if (n.length <= 6) return `${n.slice(0,3)}.${n.slice(3)}`
     if (n.length <= 9) return `${n.slice(0,3)}.${n.slice(3,6)}.${n.slice(6)}`
@@ -123,42 +124,47 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
 
     setSalvando(true)
     try {
-      // Upload da foto se houver
+      // Define o ID do usuário
+      const userId = usuarioEditando?.id || `user-${Date.now()}`
+
+      // Faz upload da foto ANTES de salvar o usuário
       let fotoUrl = usuarioEditando?.foto_perfil || null
       if (fotoArquivo) {
-        const caminho = `perfis/${matriculaSoDigitos}_${Date.now()}.jpg`
-        fotoUrl = await upload('fiscon-fotos', caminho, fotoArquivo)
+        try {
+          const caminho = `perfis/${matriculaSoDigitos}_${Date.now()}.jpg`
+          fotoUrl = await upload('fiscon-fotos', caminho, fotoArquivo)
+        } catch (uploadErr) {
+          console.warn('Erro no upload da foto:', uploadErr)
+          // Continua sem a foto
+        }
       }
 
-      // Cria/atualiza usuário — foto e cargo salvos em campos extras
+      // Cria/atualiza o usuário via RPC
       const resultado = await rpc('criar_usuario_seguro', {
-        p_id:       usuarioEditando?.id || `user-${Date.now()}`,
-        p_name:     form.name.trim(),
+        p_id:        userId,
+        p_name:      form.name.trim(),
         p_matricula: matriculaSoDigitos,
-        p_senha:    form.senha || '__manter__',
-        p_role:     form.role,
-        p_email:    form.email.trim(),
-        p_telefone: form.telefone,
-        p_endereco: apenasDigitos(form.cpf),
-        p_bairros:  form.bairros,
-        p_ativo:    true,
-        p_gerencia: form.gerencia,
+        p_senha:     form.senha || '__manter__',
+        p_role:      form.role,
+        p_email:     form.email.trim(),
+        p_telefone:  form.telefone,
+        p_endereco:  apenasDigitos(form.cpf),
+        p_bairros:   form.bairros,
+        p_ativo:     true,
+        p_gerencia:  form.gerencia,
       })
-      if (!resultado?.success) throw new Error('Falha ao salvar')
+      if (!resultado?.success) throw new Error('Falha ao salvar usuário')
 
-      // Salva cargo e foto via update direto
-      const { update } = await import('../../config/supabase.js')
-      await update('usuarios', resultado.id || usuarioEditando?.id || `user-${Date.now()}`, {
-        cargo: form.cargo.trim(),
+      // Atualiza cargo e foto diretamente na tabela
+      await update('usuarios', userId, {
+        cargo:       form.cargo.trim(),
         foto_perfil: fotoUrl,
-      }).catch(() => {
-        // Se falhar o update de cargo/foto, tenta sem foto
       })
 
       mostrarToast(usuarioEditando ? 'Usuário atualizado!' : 'Usuário criado!', 'sucesso')
       onSalvo()
     } catch (err) {
-      console.error(err)
+      console.error('Erro ao salvar usuário:', err)
       mostrarToast('Erro ao salvar. Tente novamente.', 'erro')
     } finally {
       setSalvando(false)
@@ -172,25 +178,42 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
         {/* Foto de perfil */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
           <div
             onClick={() => inputFotoRef.current?.click()}
             style={{
-              width: '88px', height: '88px', borderRadius: '50%',
-              background: '#F1F5F9', border: '3px dashed #CBD5E0',
+              width: '96px', height: '96px', borderRadius: '50%',
+              background: fotoPreview ? 'transparent' : '#F1F5F9',
+              border: `3px dashed ${fotoPreview ? '#1A56DB' : '#CBD5E0'}`,
               overflow: 'hidden', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
             }}
           >
             {fotoPreview
               ? <img src={fotoPreview} alt="Foto" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <span style={{ fontSize: '2rem' }}>📷</span>
+              : <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '2rem' }}>📷</div>
+                  <div style={{ fontSize: '0.6rem', color: '#94A3B8', marginTop: '2px' }}>Clique para adicionar</div>
+                </div>
             }
           </div>
-          <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
-            {fotoPreview ? 'Clique para trocar a foto' : 'Clique para adicionar foto'}
-          </span>
-          <input ref={inputFotoRef} type="file" accept="image/*" onChange={handleFotoChange} style={{ display: 'none' }} />
+          {fotoPreview && (
+            <button
+              type="button"
+              onClick={() => inputFotoRef.current?.click()}
+              style={{ background: 'none', border: 'none', color: '#1A56DB', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}
+            >
+              Trocar foto
+            </button>
+          )}
+          <input
+            ref={inputFotoRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFotoChange}
+            style={{ display: 'none' }}
+          />
         </div>
 
         <Campo label="Nome completo *" erro={erros.name}>
@@ -253,7 +276,9 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
                   cursor: 'pointer', textAlign: 'left',
                 }}>
                   <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: p.cor, flexShrink: 0 }} />
-                  <span style={{ fontWeight: '600', fontSize: '0.88rem', color: form.role === p.codigo ? p.cor : '#374151' }}>{p.nome}</span>
+                  <span style={{ fontWeight: '600', fontSize: '0.88rem', color: form.role === p.codigo ? p.cor : '#374151' }}>
+                    {p.nome}
+                  </span>
                 </button>
               ))}
             </div>
@@ -264,25 +289,29 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
         {ehFiscalObras && (
           <Campo label="Bairros sob responsabilidade *" erro={erros.bairros}>
             <div style={{ fontSize: '0.75rem', color: '#64748B', marginBottom: '6px' }}>
-              Selecione ao menos 1 bairro.
+              Selecione ao menos 1 bairro. Reclamações desses bairros serão atribuídas automaticamente.
             </div>
             <div style={{ maxHeight: '220px', overflowY: 'auto', border: '2px solid #E2E8F0', borderRadius: '10px', padding: '8px' }}>
               {BAIRROS_VDC.map(b => (
                 <button key={b} type="button" onClick={() => toggleBairro(b)} style={{
                   display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
-                  padding: '6px 8px', borderRadius: '8px', border: 'none',
+                  padding: '7px 8px', borderRadius: '8px', border: 'none',
                   background: form.bairros.includes(b) ? '#EBF5FF' : 'transparent',
                   cursor: 'pointer', textAlign: 'left', marginBottom: '2px',
                 }}>
                   <div style={{
-                    width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0,
+                    width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
                     border: `2px solid ${form.bairros.includes(b) ? '#1A56DB' : '#CBD5E0'}`,
                     background: form.bairros.includes(b) ? '#1A56DB' : '#fff',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
-                    {form.bairros.includes(b) && <span style={{ color: '#fff', fontSize: '10px', fontWeight: '700' }}>✓</span>}
+                    {form.bairros.includes(b) && <span style={{ color: '#fff', fontSize: '11px', fontWeight: '700', lineHeight: 1 }}>✓</span>}
                   </div>
-                  <span style={{ fontSize: '0.82rem', color: form.bairros.includes(b) ? '#1A56DB' : '#374151', fontWeight: form.bairros.includes(b) ? '600' : '400' }}>
+                  <span style={{
+                    fontSize: '0.82rem',
+                    color: form.bairros.includes(b) ? '#1A56DB' : '#374151',
+                    fontWeight: form.bairros.includes(b) ? '600' : '400',
+                  }}>
                     {b}
                   </span>
                 </button>

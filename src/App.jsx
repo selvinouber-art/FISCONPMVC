@@ -17,15 +17,16 @@ import DefesasScreen from './pages/defesas/DefesasScreen.jsx'
 import FormNotificacao from './pages/fiscalizacao/FormNotificacao.jsx'
 import FormAutoInfracao from './pages/fiscalizacao/FormAutoInfracao.jsx'
 import AdminScreen from './pages/admin/AdminScreen.jsx'
+import AuditoriaScreen from './pages/admin/AuditoriaScreen.jsx'
 import PerfilModal from './pages/perfil/PerfilModal.jsx'
 import MaisScreen from './pages/MaisScreen.jsx'
 
 export default function App() {
-  const [usuario, setUsuario]       = useState(null)
-  const [pagina, setPaginaState]    = useState('dashboard')
+  const [usuario, setUsuario]           = useState(null)
+  const [pagina, setPaginaState]        = useState('dashboard')
   const [paginaParams, setPaginaParams] = useState(null)
-  const [toast, setToast]           = useState(null)
-  const [carregando, setCarregando] = useState(true)
+  const [toast, setToast]               = useState(null)
+  const [carregando, setCarregando]     = useState(true)
 
   useEffect(() => {
     const sessao = loadSession()
@@ -87,6 +88,7 @@ export default function App() {
       case 'nova-notificacao': return <FormNotificacao {...props} params={paginaParams} />
       case 'novo-auto':        return <FormAutoInfracao {...props} notificacao={paginaParams} />
       case 'admin':            return <AdminScreen {...props} />
+      case 'auditoria':        return <AuditoriaScreen {...props} />
       case 'perfil':           return <PerfilModal {...props} />
       case 'mais':             return <MaisScreen {...props} />
       default:                 return <Dashboard {...props} />
@@ -134,7 +136,7 @@ function getAbasNav(u) {
   ]
   if (role === 'administracao') return [
     ...base,
-    { id: 'registros',       label: 'Registros',   icone: 'file' },
+    { id: 'registros',       label: 'Registros',  icone: 'file' },
     { id: 'reclamacoes',     label: 'Reclamações', icone: 'phone' },
     { id: 'nova-reclamacao', label: 'Nova Rec.',   icone: 'plus' },
     { id: 'mais',            label: 'Mais',        icone: 'settings' },
