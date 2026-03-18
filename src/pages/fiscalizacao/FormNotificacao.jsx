@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { insert, rpc, get, upload } from '../../config/supabase.js'
+import { insert, get, upload, query } from '../../config/supabase.js'
 import { gerarCodigoAcesso, gerarNumDocumento } from '../../gerencia/gerencia.js'
 import PhotoSlot from '../../components/PhotoSlot.jsx'
-import SigCanvas from '../../components/SigCanvas.jsx'
 import MascaraInput, { mascaraMatricula, apenasDigitos } from '../../components/MascaraInput.jsx'
 import InfracoesObras from './InfracoesObras.jsx'
 import InfracoesPosturas from './InfracoesPosturas.jsx'
 import Icon from '../../components/Icon.jsx'
+import { PRAZOS_NOTIFICACAO, calcularDataVencimento } from '../../config/constants.js'
 
 export default function FormNotificacao({ usuario, mostrarToast, setPagina, params }) {
-  // Pré-preenche se vier de uma reclamação
   const fromRec = params?.fromReclamacao
 
   const [form, setForm] = useState({
@@ -19,62 +18,84 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
     bairro: fromRec?.bairro || '',
     loteamento: '',
     descricao: fromRec?.descricao || '',
-    prazo: '',
+    prazoDias: '',
     infracoes: [],
   })
   const [bairros, setBairros] = useState([])
   const [fotos, setFotos] = useState([null, null, null, null])
-  const [assinatura, setAssinatura] = useState(null)
   const [salvando, setSalvando] = useState(false)
+  const [erros, setErros] = useState({})
 
   useEffect(() => {
     if (usuario.gerencia === 'obras') {
-      get('bairros', { ativo: true }).then(setBairros).catch(() => setBairros([]))
+      get('bairros', { ativo: true })
+        .then(dados => setBairros(dados.sort((a,b) => a.nome.localeCompare(b.nome))))
+        .catch(() => setBairros([]))
     }
   }, [])
 
   function set(campo, valor) {
     setForm(f => ({ ...f, [campo]: valor }))
+    setErros(e => ({ ...e, [campo]: '' }))
   }
 
   async function handleFoto(index, arquivo) {
     try {
       const caminho = `fotos/${Date.now()}_${index}.jpg`
       const url = await upload('fiscon-fotos', caminho, arquivo)
-      const novas = [...fotos]
-      novas[index] = url
-      setFotos(novas)
+      const novas = [...fotos]; novas[index] = url; setFotos(novas)
     } catch {
       mostrarToast('Erro ao enviar foto', 'erro')
     }
   }
 
+  function validar() {
+    const e = {}
+    if (!form.owner.trim())       e.owner = 'Nome do proprietário obrigatório'
+    if (!form.addr.trim())        e.addr = 'Endereço obrigatório'
+    if (form.infracoes.length === 0) e.infracoes = 'Selecione ao menos uma infração'
+    if (!form.prazoDias)          e.prazoDias = 'Selecione o prazo'
+    setErros(e)
+    return Object.keys(e).length === 0
+  }
+
   async function salvar() {
-    if (!form.owner || !form.addr || form.infracoes.length === 0) {
-      mostrarToast('Preencha proprietário, endereço e ao menos uma infração', 'erro')
+    if (!validar()) {
+      mostrarToast('Preencha os campos obrigatórios', 'erro')
       return
     }
     setSalvando(true)
     try {
-      const seq = await rpc('proximo_sequencial', { p_gerencia: usuario.gerencia, p_tipo: 'notif' })
-      const num = gerarNumDocumento('notif', usuario.gerencia, seq || 1)
+      // Calcula próximo sequencial manualmente (sem RPC problemática)
+      const anoAtual = new Date().getFullYear()
+      const gerencia = usuario.gerencia
+      const prefixo = gerencia === 'obras' ? 'NP-OB' : 'NP-PO'
+
+      const existentes = await query('records', q =>
+        q.eq('gerencia', gerencia).eq('type', 'notif')
+         .like('num', `${prefixo}-%/${anoAtual}`)
+      )
+      const seq = (existentes?.length || 0) + 1
+      const num = gerarNumDocumento('notif', gerencia, seq)
       const codigo_acesso = gerarCodigoAcesso()
       const id = `notif-${Date.now()}`
+      const prazoData = calcularDataVencimento(Number(form.prazoDias))
       const matriculaFormatada = mascaraMatricula(usuario.matricula)
+      const agora = new Date().toISOString()
 
       await insert('records', {
         id, num, type: 'notif',
-        gerencia: usuario.gerencia,
-        owner: form.owner,
-        cpf: apenasDigitos(form.cpf),   // salva só dígitos
-        addr: form.addr,
+        gerencia,
+        owner: form.owner.trim(),
+        cpf: apenasDigitos(form.cpf),
+        addr: form.addr.trim(),
         bairro: form.bairro,
         loteamento: form.loteamento,
         descricao: form.descricao,
-        prazo: form.prazo,
+        prazo: prazoData,
         infracoes: form.infracoes,
         fiscal: usuario.name,
-        matricula: usuario.matricula,   // dígitos puros
+        matricula: usuario.matricula,
         status: 'Pendente',
         codigo_acesso,
         foto_urls: fotos.filter(Boolean),
@@ -83,17 +104,18 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
       })
 
       await insert('logs', {
-        gerencia: usuario.gerencia,
+        gerencia,
         acao: 'NOVA_NOTIFICACAO',
-        detalhe: `Notificação ${num} criada pelo fiscal ${usuario.name} (Mat. ${matriculaFormatada})`,
+        detalhe: `Notificação ${num} emitida. Proprietário: ${form.owner}. Endereço: ${form.addr}. Infrações: ${form.infracoes.length}. Prazo: ${prazoData}. Fiscal: ${usuario.name} (Mat. ${matriculaFormatada}).`,
         usuario: usuario.name,
+        created_at: agora,
       })
 
-      mostrarToast(`Notificação ${num} criada!`, 'sucesso')
+      mostrarToast(`Notificação ${num} criada com sucesso!`, 'sucesso')
       setPagina('registros')
     } catch (err) {
-      console.error(err)
-      mostrarToast('Erro ao salvar notificação', 'erro')
+      console.error('Erro ao salvar notificação:', err)
+      mostrarToast(`Erro ao salvar: ${err.message || 'tente novamente'}`, 'erro')
     } finally {
       setSalvando(false)
     }
@@ -109,8 +131,8 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
         </button>
         <div>
           <h2 style={{ fontSize: '1.2rem', color: '#1E293B', margin: 0 }}>Nova Notificação</h2>
-          <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '2px' }}>
-            Fiscal: {usuario.name} — Mat. {mascaraMatricula(usuario.matricula)}
+          <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
+            {usuario.name} — Mat. {mascaraMatricula(usuario.matricula)}
           </div>
         </div>
       </div>
@@ -125,20 +147,18 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
 
         {/* Proprietário */}
         <Secao titulo="Proprietário / Infrator">
-          <Campo label="Nome completo *">
+          <Campo label="Nome completo *" erro={erros.owner}>
             <input value={form.owner} onChange={e => set('owner', e.target.value)} placeholder="Nome do proprietário" />
           </Campo>
           <Campo label="CPF / CNPJ">
             <MascaraInput tipo="cpfCnpj" value={form.cpf} onChange={v => set('cpf', v)} />
-            <span style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: '3px' }}>
-              Detecta CPF ou CNPJ automaticamente
-            </span>
+            <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Detecta CPF ou CNPJ automaticamente</span>
           </Campo>
         </Secao>
 
         {/* Endereço */}
         <Secao titulo="Endereço">
-          <Campo label="Endereço completo *">
+          <Campo label="Endereço completo *" erro={erros.addr}>
             <input value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Rua, número" />
           </Campo>
           <Campo label="Bairro">
@@ -153,27 +173,54 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
           </Campo>
           {ehObras && (
             <Campo label="Loteamento">
-              <input value={form.loteamento} onChange={e => set('loteamento', e.target.value)} placeholder="Nome do loteamento" />
+              <input value={form.loteamento} onChange={e => set('loteamento', e.target.value)} placeholder="Nome do loteamento (se houver)" />
             </Campo>
           )}
         </Secao>
 
         {/* Infrações */}
         <Secao titulo="Infrações *">
+          {erros.infracoes && (
+            <div style={{ background: '#FEE2E2', borderRadius: '8px', padding: '8px 12px', fontSize: '0.78rem', color: '#B91C1C' }}>
+              {erros.infracoes}
+            </div>
+          )}
           {ehObras
             ? <InfracoesObras selecionadas={form.infracoes} onChange={v => set('infracoes', v)} />
             : <InfracoesPosturas selecionadas={form.infracoes} onChange={v => set('infracoes', v)} />
           }
         </Secao>
 
-        {/* Detalhes */}
+        {/* Descrição e prazo */}
         <Secao titulo="Detalhes">
           <Campo label="Descrição da irregularidade">
             <textarea value={form.descricao} onChange={e => set('descricao', e.target.value)}
               placeholder="Descreva a irregularidade encontrada..." rows={3} style={{ resize: 'vertical' }} />
           </Campo>
-          <Campo label="Prazo para regularização">
-            <MascaraInput tipo="data" value={form.prazo} onChange={v => set('prazo', v)} />
+
+          <Campo label="Prazo para regularização *" erro={erros.prazoDias}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {PRAZOS_NOTIFICACAO.map(p => (
+                <button key={p.valor} type="button"
+                  onClick={() => set('prazoDias', p.valor)}
+                  style={{
+                    flex: 1, padding: '10px 6px', borderRadius: '10px',
+                    border: `2px solid ${form.prazoDias === p.valor ? '#1A56DB' : '#E2E8F0'}`,
+                    background: form.prazoDias === p.valor ? '#EBF5FF' : '#fff',
+                    color: form.prazoDias === p.valor ? '#1A56DB' : '#374151',
+                    fontWeight: form.prazoDias === p.valor ? '700' : '500',
+                    fontSize: '0.85rem', cursor: 'pointer',
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {form.prazoDias && (
+              <div style={{ fontSize: '0.75rem', color: '#166534', marginTop: '4px' }}>
+                ✅ Vence em: <strong>{calcularDataVencimento(Number(form.prazoDias))}</strong>
+              </div>
+            )}
           </Campo>
         </Secao>
 
@@ -187,11 +234,6 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
               />
             ))}
           </div>
-        </Secao>
-
-        {/* Assinatura */}
-        <Secao titulo="Assinatura do Notificado">
-          <SigCanvas onChange={setAssinatura} />
         </Secao>
 
         <button onClick={salvar} disabled={salvando} style={{
@@ -216,11 +258,12 @@ function Secao({ titulo, children }) {
   )
 }
 
-function Campo({ label, children }) {
+function Campo({ label, children, erro }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <label style={{ fontSize: '0.82rem', fontWeight: '600', color: '#374151' }}>{label}</label>
+      {label && <label style={{ fontSize: '0.82rem', fontWeight: '600', color: '#374151' }}>{label}</label>}
       {children}
+      {erro && <span style={{ fontSize: '0.72rem', color: '#B91C1C' }}>{erro}</span>}
     </div>
   )
 }

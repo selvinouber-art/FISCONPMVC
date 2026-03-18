@@ -1,4 +1,5 @@
-// Variáveis de ambiente — lê do Vite (produção/Vercel) ou de window globals (fallback dev)
+// Variáveis de ambiente — lidas do Vite (Vercel) em produção
+// NUNCA coloque senhas aqui. Configure tudo nas variáveis de ambiente do Vercel.
 export function getEnv() {
   const SUPABASE_URL =
     (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
@@ -10,14 +11,9 @@ export function getEnv() {
     (typeof window !== 'undefined' && window.SUPABASE_ANON_KEY) ||
     ''
 
-  const ADMIN_SENHA =
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ADMIN_SENHA) ||
-    (typeof window !== 'undefined' && window.ADMIN_SENHA) ||
-    'admin123'
-
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     console.warn('⚠️ Variáveis de ambiente do Supabase não configuradas.')
   }
 
-  return { SUPABASE_URL, SUPABASE_ANON_KEY, ADMIN_SENHA }
+  return { SUPABASE_URL, SUPABASE_ANON_KEY }
 }

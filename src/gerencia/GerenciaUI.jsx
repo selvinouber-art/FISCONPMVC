@@ -1,9 +1,26 @@
 import React from 'react'
 import { getGerencia, GERENCIAS } from './gerencia.js'
 
-// Barra colorida indicando a gerência do usuário
+// Informações institucionais por módulo
+export const INFO_MODULO = {
+  obras: {
+    secretaria: 'Secretaria Municipal de Infraestrutura Urbana',
+    gerencia: 'Gerência de Fiscalização',
+  },
+  posturas: {
+    secretaria: 'Secretaria de Serviços Públicos',
+    gerencia: 'Gerência de Posturas',
+  },
+  admin_geral: {
+    secretaria: 'Prefeitura Municipal de Vitória da Conquista',
+    gerencia: 'Administração Geral',
+  },
+}
+
+// Barra colorida com nome da secretaria e gerência
 export function GerenciaHeader({ gerencia }) {
   const g = getGerencia(gerencia)
+  const info = INFO_MODULO[gerencia] || INFO_MODULO.obras
   return (
     <div style={{
       background: g.fundo,
@@ -12,18 +29,24 @@ export function GerenciaHeader({ gerencia }) {
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
-      fontSize: '0.8rem',
-      fontWeight: '600',
-      color: g.cor,
     }}>
-      <span>{g.emoji}</span>
-      <span>{g.nome}</span>
-      <span style={{ marginLeft: 'auto', opacity: 0.6, fontSize: '0.7rem' }}>{g.lei}</span>
+      <span style={{ fontSize: '1rem' }}>{g.emoji}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '0.72rem', color: g.cor, fontWeight: '700', lineHeight: 1.2 }}>
+          {info.secretaria}
+        </div>
+        <div style={{ fontSize: '0.65rem', color: `${g.cor}99`, lineHeight: 1.2 }}>
+          {info.gerencia}
+        </div>
+      </div>
+      <span style={{ fontSize: '0.65rem', color: `${g.cor}66`, whiteSpace: 'nowrap' }}>
+        {g.lei}
+      </span>
     </div>
   )
 }
 
-// Badge com sigla da gerência
+// Badge com sigla
 export function GerenciaBadge({ gerencia, style = {} }) {
   const g = getGerencia(gerencia)
   return (
@@ -33,9 +56,9 @@ export function GerenciaBadge({ gerencia, style = {} }) {
       border: `1px solid ${g.cor}44`,
       borderRadius: '999px',
       padding: '2px 10px',
-      fontSize: '0.7rem',
+      fontSize: '0.68rem',
       fontWeight: '700',
-      letterSpacing: '0.05em',
+      letterSpacing: '0.04em',
       ...style,
     }}>
       {g.sigla}
@@ -43,7 +66,7 @@ export function GerenciaBadge({ gerencia, style = {} }) {
   )
 }
 
-// Seletor de gerência (para formulários de admin)
+// Seletor de gerência
 export function GerenciaSelector({ value, onChange, label = 'Gerência' }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -51,34 +74,26 @@ export function GerenciaSelector({ value, onChange, label = 'Gerência' }) {
       <select value={value} onChange={e => onChange(e.target.value)}>
         <option value="">Selecione a gerência</option>
         {Object.values(GERENCIAS).map(g => (
-          <option key={g.id} value={g.id}>
-            {g.emoji} {g.nome}
-          </option>
+          <option key={g.id} value={g.id}>{g.emoji} {g.nome}</option>
         ))}
       </select>
     </div>
   )
 }
 
-// Filtro de gerência (para listas do admin geral)
+// Filtro de gerência para admin geral
 export function GerenciaFilter({ value, onChange }) {
   return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      style={{ minWidth: '160px' }}
-    >
+    <select value={value} onChange={e => onChange(e.target.value)} style={{ minWidth: '160px' }}>
       <option value="">Todas as gerências</option>
       {Object.values(GERENCIAS).filter(g => g.id !== 'admin_geral').map(g => (
-        <option key={g.id} value={g.id}>
-          {g.emoji} {g.sigla}
-        </option>
+        <option key={g.id} value={g.id}>{g.emoji} {g.sigla}</option>
       ))}
     </select>
   )
 }
 
-// Seletor de função (carrega do banco baseado na gerência)
+// Seletor de função
 export function FuncaoSelector({ value, onChange, funcoes = [], label = 'Função' }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -86,9 +101,7 @@ export function FuncaoSelector({ value, onChange, funcoes = [], label = 'Funçã
       <select value={value} onChange={e => onChange(e.target.value)} disabled={funcoes.length === 0}>
         <option value="">Selecione a função</option>
         {funcoes.map(f => (
-          <option key={f.id} value={f.codigo}>
-            {f.nome}
-          </option>
+          <option key={f.id} value={f.codigo}>{f.nome}</option>
         ))}
       </select>
       {funcoes.length === 0 && (
