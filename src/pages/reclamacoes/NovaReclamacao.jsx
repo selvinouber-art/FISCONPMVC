@@ -6,8 +6,13 @@ import { ORIGENS_RECLAMACAO, PRIORIDADES } from '../../config/constants.js'
 import { podeRegistrarReclamacoes } from '../../gerencia/gerencia.js'
 
 export default function NovaReclamacao({ usuario, mostrarToast, setPagina }) {
-  // Bloqueia acesso se não tiver permissão
+  // Bloqueia acesso se não tiver permissão — redireciona para lista
   if (!podeRegistrarReclamacoes(usuario)) {
+    // useEffect não funciona antes do return, então mostramos tela breve e redirecionamos
+    setTimeout(() => {
+      mostrarToast('Apenas Balcão e Administração podem registrar reclamações', 'erro')
+      setPagina('reclamacoes')
+    }, 0)
     return (
       <div style={{ padding: '32px', textAlign: 'center' }}>
         <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🚫</div>
@@ -15,9 +20,7 @@ export default function NovaReclamacao({ usuario, mostrarToast, setPagina }) {
         <p style={{ color: '#64748B', fontSize: '0.88rem' }}>
           Apenas os perfis <strong>Balcão</strong> e <strong>Administração</strong> podem registrar reclamações.
         </p>
-        <button onClick={() => setPagina('reclamacoes')} style={{ marginTop: '16px', background: '#1A56DB', color: '#fff', border: 'none', borderRadius: '10px', padding: '10px 24px', fontWeight: '600', cursor: 'pointer' }}>
-          Voltar
-        </button>
+        <p style={{ color: '#94A3B8', fontSize: '0.78rem', marginTop: '8px' }}>Redirecionando...</p>
       </div>
     )
   }

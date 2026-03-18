@@ -27,6 +27,12 @@ export default function Login({ onLogin }) {
         setErro('Matrícula ou senha incorretos.')
         return
       }
+      console.log('[FISCON] Login bem-sucedido:', { 
+        name: resultado.name, 
+        role: resultado.role, 
+        gerencia: resultado.gerencia,
+        podeRegistrarReclamacoes: resultado.role === 'balcao' || resultado.role === 'administracao',
+      })
       saveSession(resultado)
       onLogin(resultado)
     } catch (err) {

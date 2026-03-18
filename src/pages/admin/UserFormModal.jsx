@@ -84,6 +84,20 @@ export default function UserFormModal({ aberto, onClose, usuarioEditando, usuari
   function handleFotoChange(e) {
     const file = e.target.files[0]
     if (!file) return
+    // Validação de formato
+    const formatosPermitidos = ['image/jpeg', 'image/png', 'image/webp']
+    if (!formatosPermitidos.includes(file.type)) {
+      mostrarToast('Formato inválido. Use JPG, PNG ou WebP.', 'erro')
+      e.target.value = ''
+      return
+    }
+    // Validação de tamanho (máx 5MB)
+    const MAX_MB = 5
+    if (file.size > MAX_MB * 1024 * 1024) {
+      mostrarToast(`Foto muito grande. Máximo ${MAX_MB}MB.`, 'erro')
+      e.target.value = ''
+      return
+    }
     setFotoArquivo(file)
     setFotoPreview(URL.createObjectURL(file))
   }

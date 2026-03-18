@@ -92,11 +92,15 @@ export const isFiscal        = u => u?.role === 'fiscal'
 export const isBalcao        = u => u?.role === 'balcao'
 export const isAdministracao = u => u?.role === 'administracao'
 
-export const podeCriarUsuarios        = u => isAdminGeral(u) || isGerencia(u)
+export const podeCriarUsuarios        = u => isAdminGeral(u) || u?.role === 'gerencia'
 export const podeEmitirDocumentos     = u => isFiscal(u) || isAdminGeral(u)
 
 // APENAS Balcão e Administração podem criar reclamações
-export const podeRegistrarReclamacoes = u => isBalcao(u) || isAdministracao(u)
+// NÃO inclui: fiscal, gerência, admin_geral (admin)
+export const podeRegistrarReclamacoes = u => {
+  const role = u?.role
+  return role === 'balcao' || role === 'administracao'
+}
 
 export const podeAtribuirReclamacoes  = u => isBalcao(u) || isAdministracao(u) || isGerencia(u) || isAdminGeral(u)
 export const podeVerLogs              = u => isGerencia(u) || isAdminGeral(u)

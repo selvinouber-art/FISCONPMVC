@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { loadSession, clearSession, startActivityTracking } from './auth/auth.js'
+import { loadSession, clearSession, startActivityTracking, revalidateSession } from './auth/auth.js'
 import Login from './auth/Login.jsx'
 import TopBar from './components/TopBar.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import Toast from './components/Toast.jsx'
 import { GerenciaHeader } from './gerencia/GerenciaUI.jsx'
-import { podeRegistrarReclamacoes } from './gerencia/gerencia.js'
+import {
+  podeRegistrarReclamacoes, podeEmitirDocumentos,
+  podeCriarUsuarios, podeVerLogs, podeJulgarDefesas,
+} from './gerencia/gerencia.js'
 
 import Dashboard from './pages/Dashboard.jsx'
 import RegistrosScreen from './pages/registros/RegistrosScreen.jsx'
@@ -29,9 +32,16 @@ export default function App() {
   const [carregando, setCarregando]     = useState(true)
 
   useEffect(() => {
-    const sessao = loadSession()
-    if (sessao) setUsuario(sessao)
-    setCarregando(false)
+    async function init() {
+      const sessao = loadSession()
+      if (sessao) {
+        // Revalida dados do banco para garantir role/cargo/foto atualizados
+        const revalidado = await revalidateSession(sessao)
+        setUsuario(revalidado)
+      }
+      setCarregando(false)
+    }
+    init()
   }, [])
 
   useEffect(() => {
@@ -45,6 +55,27 @@ export default function App() {
   }
 
   function navegar(pag, params = null) {
+    // Guard de rotas — bloqueia acesso direto a páginas sem permissão
+    if (pag === 'nova-reclamacao' && !podeRegistrarReclamacoes(usuario)) {
+      mostrarToast('Acesso restrito a Balcão e Administração', 'erro')
+      return
+    }
+    if ((pag === 'nova-notificacao' || pag === 'novo-auto') && !podeEmitirDocumentos(usuario)) {
+      mostrarToast('Acesso restrito a Fiscais', 'erro')
+      return
+    }
+    if (pag === 'admin' && !podeCriarUsuarios(usuario)) {
+      mostrarToast('Acesso restrito', 'erro')
+      return
+    }
+    if (pag === 'auditoria' && !podeVerLogs(usuario)) {
+      mostrarToast('Acesso restrito', 'erro')
+      return
+    }
+    if (pag === 'defesas' && !podeJulgarDefesas(usuario)) {
+      mostrarToast('Acesso restrito', 'erro')
+      return
+    }
     setPaginaState(pag)
     setPaginaParams(params)
     window.scrollTo(0, 0)
@@ -58,7 +89,7 @@ export default function App() {
   function handleLogout() {
     clearSession()
     setUsuario(null)
-    navegar('dashboard')
+    setPaginaState('dashboard')
   }
 
   if (carregando) {
@@ -83,12 +114,23 @@ export default function App() {
       case 'registros':        return <RegistrosScreen {...props} />
       case 'prazos':           return <PrazosScreen {...props} />
       case 'reclamacoes':      return <ReclamacoesScreen {...props} />
-      case 'nova-reclamacao':  return <NovaReclamacao {...props} />
+      case 'nova-reclamacao':
+        // Dupla verificação — guard no nível da rota E no componente
+        if (!podeRegistrarReclamacoes(usuario)) return <Dashboard {...props} />
+        return <NovaReclamacao {...props} />
       case 'defesas':          return <DefesasScreen {...props} />
-      case 'nova-notificacao': return <FormNotificacao {...props} params={paginaParams} />
-      case 'novo-auto':        return <FormAutoInfracao {...props} notificacao={paginaParams} />
-      case 'admin':            return <AdminScreen {...props} />
-      case 'auditoria':        return <AuditoriaScreen {...props} />
+      case 'nova-notificacao':
+        if (!podeEmitirDocumentos(usuario)) return <Dashboard {...props} />
+        return <FormNotificacao {...props} params={paginaParams} />
+      case 'novo-auto':
+        if (!podeEmitirDocumentos(usuario)) return <Dashboard {...props} />
+        return <FormAutoInfracao {...props} notificacao={paginaParams} />
+      case 'admin':
+        if (!podeCriarUsuarios(usuario)) return <Dashboard {...props} />
+        return <AdminScreen {...props} />
+      case 'auditoria':
+        if (!podeVerLogs(usuario)) return <Dashboard {...props} />
+        return <AuditoriaScreen {...props} />
       case 'perfil':           return <PerfilModal {...props} />
       case 'mais':             return <MaisScreen {...props} />
       default:                 return <Dashboard {...props} />
