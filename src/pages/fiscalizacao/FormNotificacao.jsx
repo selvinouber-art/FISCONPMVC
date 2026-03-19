@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react'
 import { insert, get, upload, query } from '../../config/supabase.js'
-import { gerarCodigoAcesso, gerarNumDocumento, isFiscal } from '../../gerencia/gerencia.js'
+import { gerarCodigoAcesso, gerarNumDocumento } from '../../gerencia/gerencia.js'
 import PhotoSlot from '../../components/PhotoSlot.jsx'
 import MascaraInput, { mascaraMatricula, apenasDigitos } from '../../components/MascaraInput.jsx'
 import InfracoesObras from './InfracoesObras.jsx'
 import InfracoesPosturas from './InfracoesPosturas.jsx'
 import Icon from '../../components/Icon.jsx'
 import { PRAZOS_NOTIFICACAO, calcularDataVencimento } from '../../config/constants.js'
+import { imprimirDocumentoOficial } from '../../impressao/DocumentoPDF.jsx'
 
 export default function FormNotificacao({ usuario, mostrarToast, setPagina, params }) {
   const fromRec = params?.fromReclamacao
 
   const [form, setForm] = useState({
-    owner: fromRec?.reclamado || '',
-    cpf: '', addr: fromRec?.endereco || '',
-    bairro: fromRec?.bairro || '',
+    owner: fromRec?.reclamado || '', cpf: '',
+    addr: fromRec?.endereco || '', bairro: fromRec?.bairro || '',
     loteamento: '', descricao: fromRec?.descricao || '',
     prazoDias: '', infracoes: [],
   })
@@ -25,20 +25,17 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
 
   useEffect(() => {
     if (usuario.gerencia === 'obras') {
-      get('bairros', { ativo: true })
-        .then(dados => {
-          const lista = (dados || []).sort((a, b) => a.nome.localeCompare(b.nome))
-          // Bairros do fiscal ficam no topo
-          const bairrosFiscal = usuario.bairros || []
-          if (bairrosFiscal.length > 0) {
-            const doFiscal = lista.filter(b => bairrosFiscal.includes(b.nome))
-            const outros   = lista.filter(b => !bairrosFiscal.includes(b.nome))
-            setBairros([...doFiscal, { divisor: true }, ...outros])
-          } else {
-            setBairros(lista)
-          }
-        })
-        .catch(() => setBairros([]))
+      get('bairros', { ativo: true }).then(dados => {
+        const lista = (dados || []).sort((a, b) => a.nome.localeCompare(b.nome))
+        const bairrosFiscal = usuario.bairros || []
+        if (bairrosFiscal.length > 0) {
+          const doFiscal = lista.filter(b => bairrosFiscal.includes(b.nome))
+          const outros   = lista.filter(b => !bairrosFiscal.includes(b.nome))
+          setBairros([...doFiscal, ...outros])
+        } else {
+          setBairros(lista)
+        }
+      }).catch(() => setBairros([]))
     }
   }, [])
 
@@ -56,47 +53,70 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
 
   function validar() {
     const e = {}
-    if (!form.owner.trim())          e.owner    = 'Nome obrigatório'
-    if (!form.addr.trim())           e.addr     = 'Endereço obrigatório'
+    if (!form.owner.trim())          e.owner     = 'Nome obrigatório'
+    if (!form.addr.trim())           e.addr      = 'Endereço obrigatório'
     if (form.infracoes.length === 0) e.infracoes = 'Selecione ao menos uma infração'
     if (!form.prazoDias)             e.prazoDias = 'Selecione o prazo'
     setErros(e)
     return Object.keys(e).length === 0
   }
 
+  // Salva e retorna o registro salvo (para impressão)
+  async function executarSalvar() {
+    const anoAtual = new Date().getFullYear()
+    const prefixo  = usuario.gerencia === 'obras' ? 'NP-OB' : 'NP-PO'
+    const existentes = await query('records', q =>
+      q.eq('gerencia', usuario.gerencia).eq('type', 'notif').like('num', `${prefixo}-%/${anoAtual}`)
+    )
+    const seq          = (existentes?.length || 0) + 1
+    const num          = gerarNumDocumento('notif', usuario.gerencia, seq)
+    const codigo_acesso = gerarCodigoAcesso()
+    const prazoData    = calcularDataVencimento(Number(form.prazoDias))
+    const matFormatada = mascaraMatricula(usuario.matricula)
+    const id           = `notif-${Date.now()}`
+
+    const registro = {
+      id, num, type: 'notif', gerencia: usuario.gerencia,
+      owner: form.owner.trim(), cpf: apenasDigitos(form.cpf),
+      addr: form.addr.trim(), bairro: form.bairro, loteamento: form.loteamento,
+      descricao: form.descricao, prazo: prazoData,
+      infracoes: form.infracoes, fiscal: usuario.name, matricula: usuario.matricula,
+      status: 'Pendente', codigo_acesso,
+      foto_urls: fotos.filter(Boolean),
+      date: new Date().toLocaleDateString('pt-BR'),
+      notif_rec_id: fromRec?.id || null,
+    }
+
+    await insert('records', registro)
+    await insert('logs', {
+      gerencia: usuario.gerencia, acao: 'NOVA_NOTIFICACAO',
+      detalhe: `${num} emitida. Prop.: ${form.owner}. End.: ${form.addr}. Infrações: ${form.infracoes.length}. Prazo: ${prazoData}. Fiscal: ${usuario.name} (Mat. ${matFormatada}).`,
+      usuario: usuario.name,
+    })
+    return registro
+  }
+
   async function salvar() {
     if (!validar()) { mostrarToast('Preencha os campos obrigatórios', 'erro'); return }
     setSalvando(true)
     try {
-      const anoAtual = new Date().getFullYear()
-      const prefixo  = usuario.gerencia === 'obras' ? 'NP-OB' : 'NP-PO'
-      const existentes = await query('records', q =>
-        q.eq('gerencia', usuario.gerencia).eq('type', 'notif').like('num', `${prefixo}-%/${anoAtual}`)
-      )
-      const seq         = (existentes?.length || 0) + 1
-      const num         = gerarNumDocumento('notif', usuario.gerencia, seq)
-      const codigo_acesso = gerarCodigoAcesso()
-      const prazoData   = calcularDataVencimento(Number(form.prazoDias))
-      const matFormatada = mascaraMatricula(usuario.matricula)
+      await executarSalvar()
+      mostrarToast('Notificação criada!', 'sucesso')
+      setPagina('registros')
+    } catch (err) {
+      console.error(err)
+      mostrarToast(`Erro: ${err.message || 'tente novamente'}`, 'erro')
+    } finally { setSalvando(false) }
+  }
 
-      await insert('records', {
-        id: `notif-${Date.now()}`, num, type: 'notif',
-        gerencia: usuario.gerencia,
-        owner: form.owner.trim(), cpf: apenasDigitos(form.cpf),
-        addr: form.addr.trim(), bairro: form.bairro, loteamento: form.loteamento,
-        descricao: form.descricao, prazo: prazoData,
-        infracoes: form.infracoes, fiscal: usuario.name, matricula: usuario.matricula,
-        status: 'Pendente', codigo_acesso,
-        foto_urls: fotos.filter(Boolean),
-        date: new Date().toLocaleDateString('pt-BR'),
-        notif_rec_id: fromRec?.id || null,
-      })
-      await insert('logs', {
-        gerencia: usuario.gerencia, acao: 'NOVA_NOTIFICACAO',
-        detalhe: `${num} emitida. Prop.: ${form.owner}. End.: ${form.addr}. Infrações: ${form.infracoes.length}. Prazo: ${prazoData}. Fiscal: ${usuario.name} (Mat. ${matFormatada}).`,
-        usuario: usuario.name,
-      })
-      mostrarToast(`Notificação ${num} criada!`, 'sucesso')
+  async function salvarEImprimir() {
+    if (!validar()) { mostrarToast('Preencha os campos obrigatórios', 'erro'); return }
+    setSalvando(true)
+    try {
+      const registro = await executarSalvar()
+      mostrarToast('Notificação criada! Abrindo impressão...', 'sucesso')
+      // Pequeno delay para o toast aparecer antes da janela de impressão
+      setTimeout(() => imprimirDocumentoOficial(registro), 400)
       setPagina('registros')
     } catch (err) {
       console.error(err)
@@ -147,13 +167,13 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
                 <option value="">Selecione o bairro</option>
                 {(usuario.bairros || []).length > 0 && (
                   <optgroup label="Meus bairros">
-                    {bairros.filter(b => !b.divisor && (usuario.bairros || []).includes(b.nome)).map(b => (
+                    {bairros.filter(b => (usuario.bairros || []).includes(b.nome)).map(b => (
                       <option key={b.id} value={b.nome}>{b.nome}</option>
                     ))}
                   </optgroup>
                 )}
                 <optgroup label="Outros bairros">
-                  {bairros.filter(b => !b.divisor && !(usuario.bairros || []).includes(b.nome)).map(b => (
+                  {bairros.filter(b => !(usuario.bairros || []).includes(b.nome)).map(b => (
                     <option key={b.id} value={b.nome}>{b.nome}</option>
                   ))}
                 </optgroup>
@@ -170,7 +190,11 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
         </Secao>
 
         <Secao titulo="Infrações *">
-          {erros.infracoes && <div style={{ background: '#FEE2E2', borderRadius: '8px', padding: '8px 12px', fontSize: '0.78rem', color: '#B91C1C' }}>{erros.infracoes}</div>}
+          {erros.infracoes && (
+            <div style={{ background: '#FEE2E2', borderRadius: '8px', padding: '8px 12px', fontSize: '0.78rem', color: '#B91C1C' }}>
+              {erros.infracoes}
+            </div>
+          )}
           {ehObras
             ? <InfracoesObras selecionadas={form.infracoes} onChange={v => set('infracoes', v)} />
             : <InfracoesPosturas selecionadas={form.infracoes} onChange={v => set('infracoes', v)} />
@@ -179,7 +203,8 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
 
         <Secao titulo="Detalhes">
           <Campo label="Descrição">
-            <textarea value={form.descricao} onChange={e => set('descricao', e.target.value)} placeholder="Descreva a irregularidade..." rows={3} style={{ resize: 'vertical' }} />
+            <textarea value={form.descricao} onChange={e => set('descricao', e.target.value)}
+              placeholder="Descreva a irregularidade..." rows={3} style={{ resize: 'vertical' }} />
           </Campo>
           <Campo label="Prazo para regularização *" erro={erros.prazoDias}>
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -215,14 +240,23 @@ export default function FormNotificacao({ usuario, mostrarToast, setPagina, para
           </div>
         </Secao>
 
-        <button onClick={salvar} disabled={salvando} style={{
-          background: '#1A56DB', color: '#fff', border: 'none', borderRadius: '12px',
-          padding: '16px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-        }}>
-          <Icon name="check" size={18} color="#fff" />
-          {salvando ? 'Salvando...' : 'Salvar Notificação'}
-        </button>
+        {/* Botões de ação */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button onClick={salvarEImprimir} disabled={salvando} style={{
+            background: '#1A56DB', color: '#fff', border: 'none', borderRadius: '12px',
+            padding: '16px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+          }}>
+            🖨️ {salvando ? 'Salvando...' : 'Salvar e Imprimir'}
+          </button>
+          <button onClick={salvar} disabled={salvando} style={{
+            background: '#fff', color: '#1A56DB', border: '2px solid #1A56DB',
+            borderRadius: '12px', padding: '14px', fontSize: '0.95rem', fontWeight: '600',
+            cursor: 'pointer',
+          }}>
+            {salvando ? 'Salvando...' : 'Apenas Salvar'}
+          </button>
+        </div>
       </div>
     </div>
   )

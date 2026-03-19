@@ -7,6 +7,7 @@ import InfracoesObras from './InfracoesObras.jsx'
 import InfracoesPosturas from './InfracoesPosturas.jsx'
 import Icon from '../../components/Icon.jsx'
 import { PRAZO_AUTO_DIAS, calcularDataVencimento } from '../../config/constants.js'
+import { imprimirDocumentoOficial } from '../../impressao/DocumentoPDF.jsx'
 
 export default function FormAutoInfracao({ usuario, mostrarToast, setPagina, notificacao }) {
   const fromRec = notificacao?.fromReclamacao
@@ -25,22 +26,19 @@ export default function FormAutoInfracao({ usuario, mostrarToast, setPagina, not
   const [salvando, setSalvando] = useState(false)
   const [erros, setErros]       = useState({})
 
-  const prazoFixo = calcularDataVencimento(PRAZO_AUTO_DIAS)
-  const ehObras   = usuario.gerencia === 'obras'
+  const prazoFixo  = calcularDataVencimento(PRAZO_AUTO_DIAS)
+  const ehObras    = usuario.gerencia === 'obras'
   const totalMulta = form.infracoes.reduce((acc, i) => acc + (Number(i.valor) || 0), 0)
 
   useEffect(() => {
     if (ehObras) {
       get('bairros', { ativo: true }).then(dados => {
         const lista = (dados || []).sort((a, b) => a.nome.localeCompare(b.nome))
-        const bairrosFiscal = usuario.bairros || []
-        if (bairrosFiscal.length > 0) {
-          const doFiscal = lista.filter(b => bairrosFiscal.includes(b.nome))
-          const outros   = lista.filter(b => !bairrosFiscal.includes(b.nome))
-          setBairros([...doFiscal, ...outros])
-        } else {
-          setBairros(lista)
-        }
+        const bf = usuario.bairros || []
+        setBairros(bf.length > 0
+          ? [...lista.filter(b => bf.includes(b.nome)), ...lista.filter(b => !bf.includes(b.nome))]
+          : lista
+        )
       }).catch(() => setBairros([]))
     }
   }, [])
@@ -59,48 +57,69 @@ export default function FormAutoInfracao({ usuario, mostrarToast, setPagina, not
 
   function validar() {
     const e = {}
-    if (!form.owner.trim())          e.owner    = 'Nome obrigatório'
-    if (!form.addr.trim())           e.addr     = 'Endereço obrigatório'
-    if (!apenasDigitos(form.cpf))    e.cpf      = 'CPF/CNPJ obrigatório'
+    if (!form.owner.trim())          e.owner     = 'Nome obrigatório'
+    if (!form.addr.trim())           e.addr      = 'Endereço obrigatório'
+    if (!apenasDigitos(form.cpf))    e.cpf       = 'CPF/CNPJ obrigatório'
     if (form.infracoes.length === 0) e.infracoes = 'Selecione ao menos uma infração'
     setErros(e)
     return Object.keys(e).length === 0
+  }
+
+  async function executarSalvar() {
+    const anoAtual   = new Date().getFullYear()
+    const prefixo    = usuario.gerencia === 'obras' ? 'AI-OB' : 'AI-PO'
+    const existentes = await query('records', q =>
+      q.eq('gerencia', usuario.gerencia).eq('type', 'auto').like('num', `${prefixo}-%/${anoAtual}`)
+    )
+    const seq          = (existentes?.length || 0) + 1
+    const num          = gerarNumDocumento('auto', usuario.gerencia, seq)
+    const codigo_acesso = gerarCodigoAcesso()
+    const matFormatada = mascaraMatricula(usuario.matricula)
+    const id           = `auto-${Date.now()}`
+
+    const registro = {
+      id, num, type: 'auto', gerencia: usuario.gerencia,
+      owner: form.owner.trim(), cpf: apenasDigitos(form.cpf),
+      addr: form.addr.trim(), bairro: form.bairro, descricao: form.descricao,
+      infracoes: form.infracoes, multa: totalMulta.toFixed(2),
+      testemunha1: form.testemunha1, testemunha2: form.testemunha2, obs_recusa: form.obs_recusa,
+      fiscal: usuario.name, matricula: usuario.matricula,
+      status: 'Autuado', codigo_acesso,
+      foto_urls: fotos.filter(Boolean),
+      date: new Date().toLocaleDateString('pt-BR'),
+      prazo: prazoFixo,
+      notif_id: notificacao?.id || null, notif_num: notificacao?.num || null,
+    }
+
+    await insert('records', registro)
+    await insert('logs', {
+      gerencia: usuario.gerencia, acao: 'NOVO_AUTO_INFRACAO',
+      detalhe: `${num} lavrado. Infrator: ${form.owner}. End.: ${form.addr}. Infrações: ${form.infracoes.length}. Multa: R$ ${totalMulta.toFixed(2)}. Prazo: ${prazoFixo}. Fiscal: ${usuario.name} (Mat. ${matFormatada}).${notificacao?.num ? ` Origem NP: ${notificacao.num}.` : ''}`,
+      usuario: usuario.name,
+    })
+    return registro
   }
 
   async function salvar() {
     if (!validar()) { mostrarToast('Preencha os campos obrigatórios', 'erro'); return }
     setSalvando(true)
     try {
-      const anoAtual   = new Date().getFullYear()
-      const prefixo    = usuario.gerencia === 'obras' ? 'AI-OB' : 'AI-PO'
-      const existentes = await query('records', q =>
-        q.eq('gerencia', usuario.gerencia).eq('type', 'auto').like('num', `${prefixo}-%/${anoAtual}`)
-      )
-      const seq          = (existentes?.length || 0) + 1
-      const num          = gerarNumDocumento('auto', usuario.gerencia, seq)
-      const codigo_acesso = gerarCodigoAcesso()
-      const matFormatada = mascaraMatricula(usuario.matricula)
+      await executarSalvar()
+      mostrarToast('Auto de Infração lavrado!', 'sucesso')
+      setPagina('registros')
+    } catch (err) {
+      console.error(err)
+      mostrarToast(`Erro: ${err.message || 'tente novamente'}`, 'erro')
+    } finally { setSalvando(false) }
+  }
 
-      await insert('records', {
-        id: `auto-${Date.now()}`, num, type: 'auto',
-        gerencia: usuario.gerencia,
-        owner: form.owner.trim(), cpf: apenasDigitos(form.cpf),
-        addr: form.addr.trim(), bairro: form.bairro, descricao: form.descricao,
-        infracoes: form.infracoes, multa: totalMulta.toFixed(2),
-        testemunha1: form.testemunha1, testemunha2: form.testemunha2, obs_recusa: form.obs_recusa,
-        fiscal: usuario.name, matricula: usuario.matricula,
-        status: 'Autuado', codigo_acesso,
-        foto_urls: fotos.filter(Boolean),
-        date: new Date().toLocaleDateString('pt-BR'),
-        prazo: prazoFixo,
-        notif_id: notificacao?.id || null, notif_num: notificacao?.num || null,
-      })
-      await insert('logs', {
-        gerencia: usuario.gerencia, acao: 'NOVO_AUTO_INFRACAO',
-        detalhe: `${num} lavrado. Infrator: ${form.owner}. End.: ${form.addr}. Infrações: ${form.infracoes.length}. Multa: R$ ${totalMulta.toFixed(2)}. Prazo: ${prazoFixo}. Fiscal: ${usuario.name} (Mat. ${matFormatada}).${notificacao?.num ? ` Origem NP: ${notificacao.num}.` : ''}`,
-        usuario: usuario.name,
-      })
-      mostrarToast(`Auto de Infração ${num} lavrado!`, 'sucesso')
+  async function salvarEImprimir() {
+    if (!validar()) { mostrarToast('Preencha os campos obrigatórios', 'erro'); return }
+    setSalvando(true)
+    try {
+      const registro = await executarSalvar()
+      mostrarToast('Auto lavrado! Abrindo impressão...', 'sucesso')
+      setTimeout(() => imprimirDocumentoOficial(registro), 400)
       setPagina('registros')
     } catch (err) {
       console.error(err)
@@ -124,7 +143,7 @@ export default function FormAutoInfracao({ usuario, mostrarToast, setPagina, not
 
       {notificacao?.num && (
         <div style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.82rem', color: '#B45309' }}>
-          📋 Baseado na notificação <strong>{notificacao.num}</strong> — Prazo: {prazoFixo}
+          📋 Baseado na notificação <strong>{notificacao.num}</strong>
         </div>
       )}
 
@@ -164,7 +183,11 @@ export default function FormAutoInfracao({ usuario, mostrarToast, setPagina, not
         </Secao>
 
         <Secao titulo="Infrações *">
-          {erros.infracoes && <div style={{ background: '#FEE2E2', borderRadius: '8px', padding: '8px 12px', fontSize: '0.78rem', color: '#B91C1C' }}>{erros.infracoes}</div>}
+          {erros.infracoes && (
+            <div style={{ background: '#FEE2E2', borderRadius: '8px', padding: '8px 12px', fontSize: '0.78rem', color: '#B91C1C' }}>
+              {erros.infracoes}
+            </div>
+          )}
           {ehObras
             ? <InfracoesObras selecionadas={form.infracoes} onChange={v => set('infracoes', v)} mostrarValores={true} />
             : <InfracoesPosturas selecionadas={form.infracoes} onChange={v => set('infracoes', v)} mostrarValores={true} />
@@ -180,18 +203,20 @@ export default function FormAutoInfracao({ usuario, mostrarToast, setPagina, not
         </Secao>
 
         <Secao titulo="Descrição">
-          <textarea value={form.descricao} onChange={e => set('descricao', e.target.value)} placeholder="Descreva as circunstâncias..." rows={3} style={{ resize: 'vertical' }} />
+          <textarea value={form.descricao} onChange={e => set('descricao', e.target.value)}
+            placeholder="Descreva as circunstâncias..." rows={3} style={{ resize: 'vertical' }} />
         </Secao>
 
         <Secao titulo="Testemunhas">
           <Campo label="Testemunha 1">
-            <input value={form.testemunha1} onChange={e => set('testemunha1', e.target.value)} placeholder="Nome da testemunha" />
+            <input value={form.testemunha1} onChange={e => set('testemunha1', e.target.value)} placeholder="Nome" />
           </Campo>
           <Campo label="Testemunha 2">
-            <input value={form.testemunha2} onChange={e => set('testemunha2', e.target.value)} placeholder="Nome da testemunha" />
+            <input value={form.testemunha2} onChange={e => set('testemunha2', e.target.value)} placeholder="Nome" />
           </Campo>
-          <Campo label="Obs. de recusa de assinatura">
-            <textarea value={form.obs_recusa} onChange={e => set('obs_recusa', e.target.value)} rows={2} style={{ resize: 'vertical' }} />
+          <Campo label="Obs. recusa de assinatura">
+            <textarea value={form.obs_recusa} onChange={e => set('obs_recusa', e.target.value)}
+              rows={2} style={{ resize: 'vertical' }} />
           </Campo>
         </Secao>
 
@@ -206,14 +231,23 @@ export default function FormAutoInfracao({ usuario, mostrarToast, setPagina, not
           </div>
         </Secao>
 
-        <button onClick={salvar} disabled={salvando} style={{
-          background: '#B91C1C', color: '#fff', border: 'none', borderRadius: '12px',
-          padding: '16px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-        }}>
-          <Icon name="alert" size={18} color="#fff" />
-          {salvando ? 'Salvando...' : 'Lavrar Auto de Infração'}
-        </button>
+        {/* Botões */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button onClick={salvarEImprimir} disabled={salvando} style={{
+            background: '#B91C1C', color: '#fff', border: 'none', borderRadius: '12px',
+            padding: '16px', fontSize: '1rem', fontWeight: '700', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+          }}>
+            🖨️ {salvando ? 'Salvando...' : 'Lavrar e Imprimir'}
+          </button>
+          <button onClick={salvar} disabled={salvando} style={{
+            background: '#fff', color: '#B91C1C', border: '2px solid #B91C1C',
+            borderRadius: '12px', padding: '14px', fontSize: '0.95rem', fontWeight: '600',
+            cursor: 'pointer',
+          }}>
+            {salvando ? 'Salvando...' : 'Apenas Lavrar'}
+          </button>
+        </div>
       </div>
     </div>
   )

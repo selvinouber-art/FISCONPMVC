@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { getOne, update, insert, query } from '../../config/supabase.js'
+import { getOne, update, insert } from '../../config/supabase.js'
 import Icon from '../../components/Icon.jsx'
 import { statusCores } from '../../config/theme.js'
-import { isGerencia, isAdminGeral, isFiscal } from '../../gerencia/gerencia.js'
+import { isGerencia, isAdminGeral, isFiscal, isAdministracao } from '../../gerencia/gerencia.js'
 import { mascaraMatricula } from '../../components/MascaraInput.jsx'
-import { INFO_MODULO } from '../../gerencia/GerenciaUI.jsx'
 import { imprimirDocumentoOficial } from '../../impressao/DocumentoPDF.jsx'
 
 const STATUS_PERMITIDOS = ['Pendente', 'Regularizado', 'Em recurso', 'Autuado']
@@ -36,15 +35,29 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
     try {
       await update('records', registro.id, { status: novoStatus })
       await insert('logs', {
-        gerencia: registro.gerencia,
-        acao: 'STATUS_ATUALIZADO',
+        gerencia: registro.gerencia, acao: 'STATUS_ATUALIZADO',
         detalhe: `${registro.num}: "${registro.status}" → "${novoStatus}" por ${usuario.name}`,
         usuario: usuario.name,
       })
       setRegistro(r => ({ ...r, status: novoStatus }))
-      mostrarToast(`Status atualizado para "${novoStatus}"`, 'sucesso')
+      mostrarToast(`Status: "${novoStatus}"`, 'sucesso')
     } catch { mostrarToast('Erro ao atualizar', 'erro') }
     finally { setAtualizando(false) }
+  }
+
+  async function toggleMultado() {
+    const novoMultado = !registro.multado
+    try {
+      await update('records', registro.id, { multado: novoMultado })
+      await insert('logs', {
+        gerencia: registro.gerencia, acao: novoMultado ? 'MULTA_ENCAMINHADA' : 'MULTA_DESMARCADA',
+        detalhe: `${registro.num}: multa ${novoMultado ? 'marcada como encaminhada' : 'desmarcada'} por ${usuario.name}`,
+        usuario: usuario.name,
+      })
+      setRegistro(r => ({ ...r, multado: novoMultado, status: novoMultado ? 'Multa Encaminhada' : r.status }))
+      if (novoMultado) await update('records', registro.id, { status: 'Multa Encaminhada' })
+      mostrarToast(novoMultado ? 'Multa marcada como encaminhada!' : 'Marcação removida', novoMultado ? 'sucesso' : 'alerta')
+    } catch { mostrarToast('Erro ao atualizar', 'erro') }
   }
 
   async function solicitarCancelamento() {
@@ -52,36 +65,27 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
     setSolicitando(true)
     try {
       await insert('cancel_pending', {
-        id: `cp-${Date.now()}`,
-        record_id: registro.id,
-        record_num: registro.num,
-        record_fiscal: registro.fiscal,
-        motivo: motivoCancel.trim(),
-        solicitado_por: usuario.name,
+        id: `cp-${Date.now()}`, record_id: registro.id,
+        record_num: registro.num, record_fiscal: registro.fiscal,
+        motivo: motivoCancel.trim(), solicitado_por: usuario.name,
       })
       await insert('logs', {
-        gerencia: registro.gerencia,
-        acao: 'SOLICITACAO_CANCELAMENTO',
+        gerencia: registro.gerencia, acao: 'SOLICITACAO_CANCELAMENTO',
         detalhe: `Cancelamento solicitado para ${registro.num} por ${usuario.name}. Motivo: ${motivoCancel}`,
         usuario: usuario.name,
       })
       mostrarToast('Solicitação enviada à Gerência', 'sucesso')
-      setShowCancelForm(false)
-      setMotivoCancel('')
+      setShowCancelForm(false); setMotivoCancel('')
     } catch { mostrarToast('Erro ao solicitar', 'erro') }
     finally { setSolicitando(false) }
   }
 
   function imprimirTermica() {
     if (!registro) return
-    const info   = INFO_MODULO[registro.gerencia] || INFO_MODULO.obras
     const matFmt = mascaraMatricula(registro.matricula || '')
     const ehAuto = registro.type === 'auto'
     const qrUrl  = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://fiscon.pmvc.ba.gov.br/portal?codigo=${registro.codigo_acesso}`)}`
-
-    const infracoes = (registro.infracoes || []).map(i =>
-      `<div style="margin:2px 0;font-size:10px;">• ${i.descricao}</div>`
-    ).join('')
+    const infracoes = (registro.infracoes || []).map(i => `<div style="margin:2px 0;font-size:10px;">• ${i.descricao}</div>`).join('')
 
     const html = `<!DOCTYPE html><html><head><title>${registro.num}</title>
     <style>
@@ -92,12 +96,7 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
       img.br { width:18mm; height:18mm; } img.qr { width:22mm; height:22mm; }
       @media print { @page { size:58mm auto; margin:0; } }
     </style></head><body>
-    <div class="c">
-      <img class="br" src="https://upload.wikimedia.org/wikipedia/commons/5/57/Bras%C3%A3o_Vitoria_da_Conquista.svg"/>
-      <div class="p">Prefeitura Municipal de Vitória da Conquista</div>
-      <div class="b p">${info.secretaria}</div>
-      <div class="p">${info.gerencia}</div>
-    </div>
+    <div class="c"><img class="br" src="https://upload.wikimedia.org/wikipedia/commons/5/57/Bras%C3%A3o_Vitoria_da_Conquista.svg"/></div>
     <div class="l"></div>
     <div class="c b" style="font-size:12px;">${ehAuto ? 'AUTO DE INFRAÇÃO' : 'NOTIFICAÇÃO PRELIMINAR'}</div>
     <div class="c b" style="font-size:13px;letter-spacing:1px;">${registro.num}</div>
@@ -111,9 +110,7 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
     <div class="b">INFRAÇÕES:</div>
     ${infracoes}
     ${ehAuto && registro.multa && Number(registro.multa) > 0
-      ? `<div class="l"></div><div class="b">MULTA: R$ ${Number(registro.multa).toFixed(2).replace('.',',')}</div>`
-      : ''
-    }
+      ? `<div class="l"></div><div class="b">MULTA: R$ ${Number(registro.multa).toFixed(2).replace('.',',')}</div>` : ''}
     <div class="l"></div>
     <div class="b">PRAZO: ${registro.prazo || '—'}</div>
     <div class="l"></div>
@@ -123,12 +120,8 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
     <div class="c">
       <div class="p b">Portal do Cidadão:</div>
       <img class="qr" src="${qrUrl}"/>
-      <div class="p">Código de acesso:</div>
-      <div class="b" style="font-size:13px;letter-spacing:2px;">${registro.codigo_acesso || '—'}</div>
-      <div class="p">fiscon.pmvc.ba.gov.br/portal</div>
+      <div class="p">Código: <span class="b" style="letter-spacing:2px;">${registro.codigo_acesso || '—'}</span></div>
     </div>
-    <div class="l"></div>
-    <div class="c p">Vitória da Conquista — BA</div>
     </body></html>`
 
     const win = window.open('', '_blank')
@@ -138,12 +131,14 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
   }
 
   if (carregando) return <div style={{ padding: '32px', textAlign: 'center', color: '#94A3B8' }}>Carregando...</div>
-  if (!registro) return null
+  if (!registro)  return null
 
-  const sc          = statusCores[registro.status] || { fundo: '#F1F5F9', cor: '#6B7280' }
-  const cancelado   = registro.status === 'Cancelado'
-  const ehAuto      = registro.type === 'auto'
-  const podeAlterar = !isFiscal(usuario) || registro.matricula === usuario.matricula
+  const sc        = statusCores[registro.status] || { fundo: '#F1F5F9', cor: '#6B7280' }
+  const cancelado = registro.status === 'Cancelado'
+  const ehAuto    = registro.type === 'auto'
+  // Pode alterar status: administração, gerência, admin ou o próprio fiscal
+  const podeAlterar = isAdministracao(usuario) || isGerencia(usuario) || isAdminGeral(usuario) ||
+    (isFiscal(usuario) && registro.matricula === usuario.matricula)
 
   return (
     <div style={{ padding: '16px' }}>
@@ -165,14 +160,13 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
 
       {cancelado && (
         <div style={{ background: '#FEE2E2', border: '2px solid #FECACA', borderRadius: '12px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.85rem', color: '#B91C1C', fontWeight: '600' }}>
-          🚫 Este registro foi cancelado definitivamente e não pode ser reimpresso.
+          🚫 Registro cancelado definitivamente. Impressão não disponível.
           {registro.cancelado_em && ` Cancelado em: ${registro.cancelado_em}`}
         </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-        {/* Notificado */}
         <Secao titulo="Notificado / Infrator">
           <InfoLinha label="Nome"       valor={registro.owner} />
           <InfoLinha label="CPF/CNPJ"   valor={registro.cpf} />
@@ -181,13 +175,11 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
           <InfoLinha label="Loteamento" valor={registro.loteamento} />
         </Secao>
 
-        {/* Infrações */}
         {registro.infracoes?.length > 0 && (
           <Secao titulo={`Infrações (${registro.infracoes.length})`}>
             {registro.infracoes.map((inf, i) => (
               <div key={i} style={{ padding: '8px 0', borderBottom: i < registro.infracoes.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
                 <div style={{ fontSize: '0.82rem', color: '#1E293B' }}>{inf.descricao}</div>
-                {/* Valor só aparece no auto */}
                 {ehAuto && inf.valor > 0 && (
                   <div style={{ fontSize: '0.72rem', color: '#B91C1C', fontWeight: '600', marginTop: '2px' }}>
                     R$ {Number(inf.valor).toFixed(2).replace('.', ',')}
@@ -206,30 +198,52 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
           </Secao>
         )}
 
-        {/* Detalhes */}
         <Secao titulo="Detalhes">
-          <InfoLinha label="Prazo"   valor={registro.prazo} />
-          <InfoLinha label="Fiscal"  valor={`${registro.fiscal} — Mat. ${mascaraMatricula(registro.matricula || '')}`} />
-          {registro.descricao    && <InfoLinha label="Descrição"    valor={registro.descricao} />}
-          {registro.testemunha1  && <InfoLinha label="Testemunha 1" valor={registro.testemunha1} />}
-          {registro.testemunha2  && <InfoLinha label="Testemunha 2" valor={registro.testemunha2} />}
-          {registro.obs_recusa   && <InfoLinha label="Obs. recusa"  valor={registro.obs_recusa} />}
+          <InfoLinha label="Prazo"  valor={registro.prazo} />
+          <InfoLinha label="Fiscal" valor={`${registro.fiscal} — Mat. ${mascaraMatricula(registro.matricula || '')}`} />
+          {registro.descricao   && <InfoLinha label="Descrição"    valor={registro.descricao} />}
+          {registro.testemunha1 && <InfoLinha label="Testemunha 1" valor={registro.testemunha1} />}
+          {registro.testemunha2 && <InfoLinha label="Testemunha 2" valor={registro.testemunha2} />}
+          {registro.obs_recusa  && <InfoLinha label="Obs. recusa"  valor={registro.obs_recusa} />}
         </Secao>
 
-        {/* Fotos */}
         {registro.foto_urls?.length > 0 && (
           <Secao titulo={`Fotos (${registro.foto_urls.length})`}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               {registro.foto_urls.map((url, i) => (
                 <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <img src={url} alt={`Foto ${i+1}`} style={{ width: '100%', borderRadius: '8px', height: '100px', objectFit: 'cover', display: 'block' }} />
+                  <img src={url} alt={`Foto ${i+1}`} style={{ width: '100%', borderRadius: '8px', aspectRatio: '1', objectFit: 'cover', display: 'block' }} />
                 </a>
               ))}
             </div>
           </Secao>
         )}
 
-        {/* Atualizar Status — não mostra se cancelado */}
+        {/* Encaminhar multa — só auto, não cancelado */}
+        {ehAuto && !cancelado && podeAlterar && (
+          <Secao titulo="Multa">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '0.9rem', color: '#1E293B' }}>Multa encaminhada ao setor competente?</div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '2px' }}>
+                  {registro.multado ? '✅ Sim — multa encaminhada' : '⏳ Não — pendente de encaminhamento'}
+                </div>
+              </div>
+              <button onClick={toggleMultado} style={{
+                background: registro.multado ? '#F0FDF4' : '#FEF3C7',
+                border: `2px solid ${registro.multado ? '#166534' : '#B45309'}`,
+                color: registro.multado ? '#166534' : '#B45309',
+                borderRadius: '10px', padding: '8px 14px',
+                fontWeight: '700', fontSize: '0.82rem', cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}>
+                {registro.multado ? '✅ Encaminhada' : 'Marcar encaminhada'}
+              </button>
+            </div>
+          </Secao>
+        )}
+
+        {/* Atualizar Status */}
         {!cancelado && podeAlterar && (
           <Secao titulo="Atualizar Situação">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -255,10 +269,9 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
 
         {/* Ações */}
         <Secao titulo="Ações">
-          {/* Imprimir — apenas se NÃO cancelado */}
           {!cancelado && (
             <>
-              <button onClick={() => imprimirTermica()} style={{
+              <button onClick={imprimirTermica} style={{
                 width: '100%', background: '#1A56DB', color: '#fff', border: 'none',
                 borderRadius: '10px', padding: '12px', fontWeight: '700', fontSize: '0.9rem',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
@@ -277,8 +290,8 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
             </>
           )}
 
-          {/* Encaminhar para auto */}
-          {!cancelado && ehAuto === false && registro.status === 'Pendente' && isFiscal(usuario) && registro.matricula === usuario.matricula && (
+          {!cancelado && ehAuto === false && registro.status === 'Pendente' &&
+            isFiscal(usuario) && registro.matricula === usuario.matricula && (
             <button onClick={() => setPagina('novo-auto', registro)} style={{
               width: '100%', background: '#FEE2E2', color: '#B91C1C',
               border: '2px solid #FECACA', borderRadius: '10px', padding: '12px',
@@ -289,49 +302,45 @@ export default function RegistroDetalhe({ registroId, usuario, mostrarToast, set
             </button>
           )}
 
-          {/* Solicitar cancelamento — fiscal e administração */}
           {!cancelado && !isGerencia(usuario) && !isAdminGeral(usuario) && (
-            <>
-              {!showCancelForm ? (
-                <button onClick={() => setShowCancelForm(true)} style={{
-                  width: '100%', background: '#F1F5F9', color: '#6B7280',
-                  border: '2px solid #E2E8F0', borderRadius: '10px', padding: '12px',
-                  fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer',
-                }}>
-                  Solicitar Cancelamento à Gerência
-                </button>
-              ) : (
-                <div style={{ background: '#FFF7ED', border: '2px solid #FED7AA', borderRadius: '12px', padding: '14px' }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#C2410C', marginBottom: '10px' }}>
-                    Motivo do cancelamento *
-                  </div>
-                  <textarea value={motivoCancel} onChange={e => setMotivoCancel(e.target.value)}
-                    placeholder="Descreva o motivo..." rows={3} style={{ resize: 'vertical', marginBottom: '10px' }} />
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={solicitarCancelamento} disabled={solicitando} style={{
-                      flex: 1, background: '#C2410C', color: '#fff', border: 'none',
-                      borderRadius: '8px', padding: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '0.85rem',
-                    }}>
-                      {solicitando ? 'Enviando...' : 'Enviar Solicitação'}
-                    </button>
-                    <button onClick={() => { setShowCancelForm(false); setMotivoCancel('') }} style={{
-                      flex: 1, background: '#F1F5F9', color: '#6B7280', border: 'none',
-                      borderRadius: '8px', padding: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '0.85rem',
-                    }}>
-                      Cancelar
-                    </button>
-                  </div>
+            !showCancelForm ? (
+              <button onClick={() => setShowCancelForm(true)} style={{
+                width: '100%', background: '#F1F5F9', color: '#6B7280',
+                border: '2px solid #E2E8F0', borderRadius: '10px', padding: '12px',
+                fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer',
+              }}>
+                Solicitar Cancelamento à Gerência
+              </button>
+            ) : (
+              <div style={{ background: '#FFF7ED', border: '2px solid #FED7AA', borderRadius: '12px', padding: '14px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#C2410C', marginBottom: '10px' }}>
+                  Motivo do cancelamento *
                 </div>
-              )}
-            </>
+                <textarea value={motivoCancel} onChange={e => setMotivoCancel(e.target.value)}
+                  placeholder="Descreva o motivo..." rows={3} style={{ resize: 'vertical', marginBottom: '10px' }} />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={solicitarCancelamento} disabled={solicitando} style={{
+                    flex: 1, background: '#C2410C', color: '#fff', border: 'none',
+                    borderRadius: '8px', padding: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '0.85rem',
+                  }}>
+                    {solicitando ? 'Enviando...' : 'Enviar Solicitação'}
+                  </button>
+                  <button onClick={() => { setShowCancelForm(false); setMotivoCancel('') }} style={{
+                    flex: 1, background: '#F1F5F9', color: '#6B7280', border: 'none',
+                    borderRadius: '8px', padding: '10px', fontWeight: '600', cursor: 'pointer', fontSize: '0.85rem',
+                  }}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )
           )}
 
-          {/* Gerente cancela direto */}
           {!cancelado && (isGerencia(usuario) || isAdminGeral(usuario)) && (
             <button onClick={async () => {
               if (!window.confirm('Confirmar cancelamento definitivo?')) return
               await update('records', registro.id, { status: 'Cancelado', cancelado_em: new Date().toLocaleDateString('pt-BR') })
-              await insert('logs', { gerencia: registro.gerencia, acao: 'CANCELAMENTO_AUTORIZADO', detalhe: `${registro.num} cancelado definitivamente por ${usuario.name}`, usuario: usuario.name })
+              await insert('logs', { gerencia: registro.gerencia, acao: 'CANCELAMENTO_AUTORIZADO', detalhe: `${registro.num} cancelado por ${usuario.name}`, usuario: usuario.name })
               setRegistro(r => ({ ...r, status: 'Cancelado', cancelado_em: new Date().toLocaleDateString('pt-BR') }))
               mostrarToast('Registro cancelado', 'sucesso')
             }} style={{

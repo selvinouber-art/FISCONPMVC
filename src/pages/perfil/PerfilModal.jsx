@@ -1,17 +1,28 @@
-import React, { useState } from 'react'
-import { rpc } from '../../config/supabase.js'
+import React, { useState, useEffect } from 'react'
+import { rpc, getOne } from '../../config/supabase.js'
 import Icon from '../../components/Icon.jsx'
-import Modal from '../../components/Modal.jsx'
 import { getGerencia, nomePerfil } from '../../gerencia/gerencia.js'
 import { mascaraMatricula } from '../../components/MascaraInput.jsx'
-import Credencial from './Credencial.jsx'
+import { abrirCredencial } from './Credencial.jsx'
 
-export default function PerfilModal({ usuario, mostrarToast, setPagina }) {
-  const [senhaAtual, setSenhaAtual]     = useState('')
-  const [novaSenha, setNovaSenha]       = useState('')
+export default function PerfilModal({ usuario: usuarioInicial, mostrarToast, setPagina }) {
+  const [usuario, setUsuario]         = useState(usuarioInicial)
+  const [senhaAtual, setSenhaAtual]   = useState('')
+  const [novaSenha, setNovaSenha]     = useState('')
   const [confirmaSenha, setConfirmaSenha] = useState('')
-  const [salvando, setSalvando]         = useState(false)
-  const [verCredencial, setVerCredencial] = useState(false)
+  const [salvando, setSalvando]       = useState(false)
+  const [abrindo, setAbrindo]         = useState(false)
+
+  // Recarrega do banco para pegar foto e cargo atualizados
+  useEffect(() => {
+    async function recarregar() {
+      try {
+        const dados = await getOne('usuarios', usuarioInicial.id)
+        if (dados) setUsuario(dados)
+      } catch { /* usa o que tem */ }
+    }
+    recarregar()
+  }, [usuarioInicial.id])
 
   const g = getGerencia(usuario.gerencia)
 
@@ -33,9 +44,17 @@ export default function PerfilModal({ usuario, mostrarToast, setPagina }) {
     finally { setSalvando(false) }
   }
 
+  async function handleVerCredencial() {
+    setAbrindo(true)
+    try {
+      await abrirCredencial(usuario)
+    } finally {
+      setAbrindo(false)
+    }
+  }
+
   return (
     <div style={{ padding: '16px' }}>
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
         <button onClick={() => setPagina('mais')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
           <Icon name="chevronRight" size={20} color="#64748B" style={{ transform: 'rotate(180deg)' }} />
@@ -48,14 +67,14 @@ export default function PerfilModal({ usuario, mostrarToast, setPagina }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
           {/* Foto */}
           <div style={{
-            width: '64px', height: '64px', borderRadius: '50%',
+            width: '72px', height: '72px', borderRadius: '50%',
             background: g.fundo, border: `3px solid ${g.cor}44`,
             overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
             {usuario.foto_perfil
               ? <img src={usuario.foto_perfil} alt="Foto" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <span style={{ fontSize: '1.8rem' }}>👤</span>
+              : <span style={{ fontSize: '2rem' }}>👤</span>
             }
           </div>
           <div>
@@ -72,14 +91,18 @@ export default function PerfilModal({ usuario, mostrarToast, setPagina }) {
         </div>
 
         {/* Botão crachá */}
-        <button onClick={() => setVerCredencial(true)} style={{
-          width: '100%', background: g.fundo, color: g.cor,
-          border: `2px solid ${g.cor}44`, borderRadius: '10px',
-          padding: '12px', fontWeight: '700', fontSize: '0.9rem',
-          cursor: 'pointer', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', gap: '8px',
-        }}>
-          🪪 Visualizar Crachá / Credencial
+        <button
+          onClick={handleVerCredencial}
+          disabled={abrindo}
+          style={{
+            width: '100%', background: g.fundo, color: g.cor,
+            border: `2px solid ${g.cor}44`, borderRadius: '10px',
+            padding: '12px', fontWeight: '700', fontSize: '0.9rem',
+            cursor: 'pointer', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', gap: '8px',
+          }}
+        >
+          🪪 {abrindo ? 'Abrindo...' : 'Ver Crachá / Credencial'}
         </button>
       </div>
 
@@ -104,11 +127,6 @@ export default function PerfilModal({ usuario, mostrarToast, setPagina }) {
           </button>
         </div>
       </div>
-
-      {/* Modal do crachá */}
-      <Modal aberto={verCredencial} onClose={() => setVerCredencial(false)} titulo="Credencial / Crachá">
-        <Credencial usuario={usuario} onFechar={() => setVerCredencial(false)} />
-      </Modal>
     </div>
   )
 }

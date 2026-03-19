@@ -1,218 +1,218 @@
-import React, { useRef, useEffect, useState } from 'react'
 import { INFO_MODULO } from '../../gerencia/GerenciaUI.jsx'
 import { getGerencia, nomePerfil } from '../../gerencia/gerencia.js'
 import { mascaraMatricula, mascaraCPF } from '../../components/MascaraInput.jsx'
 import { getOne } from '../../config/supabase.js'
 
-// Dimensões: cartão vertical padrão celular = 54mm × 85.6mm
-// Em px (96dpi × 2 para qualidade): 204 × 324px display
+const BRASAO_URL = 'https://upload.wikimedia.org/wikipedia/commons/5/57/Bras%C3%A3o_Vitoria_da_Conquista.svg'
 
-export default function Credencial({ usuario: usuarioInicial, onFechar }) {
-  const cardRef = useRef()
-  const [usuario, setUsuario] = useState(usuarioInicial)
-
-  useEffect(() => {
-    async function recarregar() {
-      try {
-        const dados = await getOne('usuarios', usuarioInicial.id)
-        if (dados) setUsuario(dados)
-      } catch { /* usa o que tem */ }
-    }
-    recarregar()
-  }, [usuarioInicial.id])
+// Abre o crachá em nova guia, em tela cheia, sem bordas
+export async function abrirCredencial(usuarioInicial) {
+  // Recarrega do banco para pegar foto atualizada
+  let usuario = usuarioInicial
+  try {
+    const dados = await getOne('usuarios', usuarioInicial.id)
+    if (dados) usuario = dados
+  } catch { /* usa o que tem */ }
 
   const g    = getGerencia(usuario.gerencia)
   const info = INFO_MODULO[usuario.gerencia] || INFO_MODULO.obras
   const mat  = mascaraMatricula(usuario.matricula || '')
-  const cpf  = mascaraCPF(usuario.endereco || '') // CPF salvo em endereco
+  const cpf  = mascaraCPF(usuario.endereco || '')
 
-  function imprimir() {
-    const html = cardRef.current.outerHTML
-    const win  = window.open('', '_blank')
-    win.document.write(`
-      <!DOCTYPE html><html><head><title>Crachá — ${usuario.name}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@700&display=swap" rel="stylesheet"/>
-      <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Barlow', sans-serif; }
-        @media print { body { background: #fff; } @page { size: 54mm 85.6mm; margin: 0; } }
-      </style></head><body>${html}</body></html>
-    `)
-    win.document.close()
-    setTimeout(() => { win.print(); win.close() }, 500)
-  }
-
-  // Cores do gradiente por gerência
   const gradiente = `linear-gradient(175deg, ${g.cor} 0%, ${g.cor}CC 50%, #0a1a4a 100%)`
+  const fotoSrc   = usuario.foto_perfil || ''
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Crachá — ${usuario.name}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@700&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%; width: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: #0a1a4a;
+      font-family: 'Barlow', sans-serif;
+      overflow: hidden;
+    }
+    .card {
+      /* Proporção cartão vertical: 54mm × 85.6mm */
+      width: min(90vw, 54vh * 0.631);
+      height: min(90vh, 90vw / 0.631);
+      background: ${gradiente};
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 16px 64px rgba(0,0,0,0.6);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    /* Marca d'água brasão */
+    .dagua {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; z-index: 0;
+    }
+    .dagua img { width: 85%; height: 85%; opacity: 0.07; object-fit: contain; filter: brightness(10); }
+    /* Faixa topo */
+    .topo { height: 5px; background: rgba(255,255,255,0.5); position: relative; z-index: 1; }
+    /* Cabeçalho */
+    .cabecalho {
+      padding: 3% 5% 2%; text-align: center;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      position: relative; z-index: 1;
+    }
+    .brasao-img { width: 12%; height: auto; margin-bottom: 2%; }
+    .cab-pref   { font-size: 1.8vmin; color: rgba(255,255,255,0.8); line-height: 1.3; }
+    .cab-sec    { font-size: 2.2vmin; font-weight: 700; color: #fff; margin: 1% 0; line-height: 1.2; }
+    .cab-ger    { font-size: 1.8vmin; color: rgba(255,255,255,0.75); line-height: 1.3; }
+    /* Foto */
+    .foto-wrap {
+      display: flex; justify-content: center;
+      padding: 5% 0 3%;
+      position: relative; z-index: 1;
+    }
+    .foto-circulo {
+      width: 26%; padding-top: 26%;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.85);
+      overflow: hidden;
+      background: rgba(255,255,255,0.15);
+      position: relative;
+      cursor: grab;
+      flex-shrink: 0;
+    }
+    .foto-circulo img {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      object-position: center top;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    .foto-sem {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 6vmin;
+    }
+    /* Nome e cargo */
+    .nome-area { text-align: center; padding: 0 5% 3%; position: relative; z-index: 1; }
+    .nome {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 4.5vmin; font-weight: 700; color: #fff;
+      line-height: 1.1; letter-spacing: 0.02em;
+    }
+    .cargo { font-size: 2.5vmin; color: rgba(255,255,255,0.9); font-weight: 600; margin-top: 1.5%; }
+    /* Divisor */
+    .divisor { height: 1px; background: rgba(255,255,255,0.25); margin: 0 5%; position: relative; z-index: 1; }
+    /* Rodapé */
+    .rodape {
+      padding: 3% 5%; flex: 1;
+      display: flex; flex-direction: column; justify-content: center;
+      gap: 3%; position: relative; z-index: 1;
+    }
+    .row { display: flex; justify-content: space-between; align-items: flex-start; }
+    .info-label { font-size: 1.6vmin; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 1px; }
+    .info-valor { font-size: 2.8vmin; color: #fff; font-weight: 700; letter-spacing: 0.05em; }
+    .info-valor-sm { font-size: 2.4vmin; color: #fff; font-weight: 600; letter-spacing: 0.04em; }
+    /* Barra inferior */
+    .barra-inf { height: 5px; background: rgba(255,255,255,0.3); position: relative; z-index: 1; }
+    /* Dica de ajuste */
+    .dica {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; color: rgba(255,255,255,0.5);
+      background: rgba(0,0,0,0.4); padding: 6px 16px; border-radius: 999px;
+      white-space: nowrap; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="dagua"><img src="${BRASAO_URL}" alt=""/></div>
+  <div class="topo"></div>
 
-      {/* Card vertical — 204px × 324px (proporção 54×85.6mm) */}
-      <div ref={cardRef} style={{
-        width: '204px',
-        height: '324px',
-        background: gradiente,
-        borderRadius: '16px',
-        overflow: 'hidden',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        fontFamily: "'Barlow', sans-serif",
-      }}>
+  <div class="cabecalho">
+    <img class="brasao-img" src="${BRASAO_URL}" alt="Brasão"/>
+    <div class="cab-pref">Prefeitura Municipal de Vitória da Conquista</div>
+    <div class="cab-sec">${info.secretaria}</div>
+    <div class="cab-ger">${info.gerencia}</div>
+  </div>
 
-        {/* MARCA D'ÁGUA — brasão preenchendo o fundo */}
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          pointerEvents: 'none',
-          zIndex: 0,
-        }}>
-          <img
-            src="https://upload.wikimedia.org/wikipedia/commons/5/57/Bras%C3%A3o_Vitoria_da_Conquista.svg"
-            alt=""
-            style={{
-              width: '180px',
-              height: '180px',
-              opacity: 0.08,
-              filter: 'brightness(10)',
-            }}
-          />
-        </div>
+  <div class="foto-wrap">
+    <div class="foto-circulo" id="fotoBox">
+      ${fotoSrc
+        ? `<img src="${fotoSrc}" id="fotoImg" alt="Foto" draggable="false"/>`
+        : `<div class="foto-sem">👤</div>`
+      }
+    </div>
+  </div>
 
-        {/* Faixa superior decorativa */}
-        <div style={{ height: '4px', background: 'rgba(255,255,255,0.5)', position: 'relative', zIndex: 1 }} />
+  <div class="nome-area">
+    <div class="nome">${(usuario.name || '').toUpperCase()}</div>
+    <div class="cargo">${usuario.cargo || nomePerfil(usuario)}</div>
+  </div>
 
-        {/* Cabeçalho institucional */}
-        <div style={{
-          padding: '10px 12px 8px',
-          textAlign: 'center',
-          position: 'relative',
-          zIndex: 1,
-          borderBottom: '1px solid rgba(255,255,255,0.2)',
-        }}>
-          {/* Brasão pequeno visível */}
-          <img
-            src="https://upload.wikimedia.org/wikipedia/commons/5/57/Bras%C3%A3o_Vitoria_da_Conquista.svg"
-            alt="Brasão"
-            style={{ width: '28px', height: '28px', marginBottom: '4px' }}
-          />
-          <div style={{ fontSize: '0.48rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.3 }}>
-            Prefeitura Municipal de Vitória da Conquista
-          </div>
-          <div style={{ fontSize: '0.55rem', color: '#fff', fontWeight: '700', lineHeight: 1.3, marginTop: '2px' }}>
-            {info.secretaria}
-          </div>
-          <div style={{ fontSize: '0.48rem', color: 'rgba(255,255,255,0.75)', lineHeight: 1.3 }}>
-            {info.gerencia}
-          </div>
-        </div>
+  <div class="divisor"></div>
 
-        {/* Foto centralizada */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          padding: '12px 0 8px',
-          position: 'relative',
-          zIndex: 1,
-        }}>
-          <div style={{
-            width: '72px', height: '72px',
-            borderRadius: '50%',
-            border: '3px solid rgba(255,255,255,0.85)',
-            overflow: 'hidden',
-            background: 'rgba(255,255,255,0.15)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {usuario.foto_perfil
-              ? <img src={usuario.foto_perfil} alt="Foto" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <span style={{ fontSize: '2rem' }}>👤</span>
-            }
-          </div>
-        </div>
-
-        {/* Nome e cargo */}
-        <div style={{
-          textAlign: 'center',
-          padding: '0 12px 10px',
-          position: 'relative',
-          zIndex: 1,
-        }}>
-          <div style={{
-            fontFamily: "'Barlow Condensed', sans-serif",
-            fontSize: '0.95rem', fontWeight: '700',
-            color: '#fff', lineHeight: 1.2,
-            letterSpacing: '0.02em',
-          }}>
-            {usuario.name?.toUpperCase()}
-          </div>
-          <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.9)', fontWeight: '600', marginTop: '3px' }}>
-            {usuario.cargo || nomePerfil(usuario)}
-          </div>
-        </div>
-
-        {/* Linha divisória */}
-        <div style={{ height: '1px', background: 'rgba(255,255,255,0.25)', margin: '0 12px', position: 'relative', zIndex: 1 }} />
-
-        {/* Rodapé — matrícula e CPF */}
-        <div style={{
-          padding: '8px 12px',
-          position: 'relative',
-          zIndex: 1,
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          gap: '6px',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: '0.42rem', color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Matrícula</div>
-              <div style={{ fontSize: '0.72rem', color: '#fff', fontWeight: '700', letterSpacing: '0.08em' }}>{mat}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.42rem', color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Perfil</div>
-              <div style={{ fontSize: '0.62rem', color: '#fff', fontWeight: '600' }}>{nomePerfil(usuario)}</div>
-            </div>
-          </div>
-          {cpf && (
-            <div>
-              <div style={{ fontSize: '0.42rem', color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>CPF</div>
-              <div style={{ fontSize: '0.65rem', color: '#fff', fontWeight: '600', letterSpacing: '0.04em' }}>{cpf}</div>
-            </div>
-          )}
-        </div>
-
-        {/* Faixa inferior */}
-        <div style={{ height: '6px', background: 'rgba(255,255,255,0.3)', position: 'relative', zIndex: 1 }} />
-      </div>
-
-      {/* Aviso sem foto */}
-      {!usuario.foto_perfil && (
-        <div style={{ fontSize: '0.75rem', color: '#B45309', background: '#FEF3C7', borderRadius: '8px', padding: '8px 14px', textAlign: 'center', maxWidth: '260px' }}>
-          ⚠️ Sem foto cadastrada. Edite o usuário para adicionar.
-        </div>
-      )}
-
-      {/* Botões */}
-      <div style={{ display: 'flex', gap: '10px', width: '204px' }}>
-        <button onClick={imprimir} style={{
-          flex: 1, background: '#1A56DB', color: '#fff', border: 'none',
-          borderRadius: '10px', padding: '11px 8px', fontWeight: '700', fontSize: '0.82rem', cursor: 'pointer',
-        }}>
-          🖨️ Imprimir
-        </button>
-        <button onClick={onFechar} style={{
-          flex: 1, background: '#F1F5F9', color: '#475569', border: 'none',
-          borderRadius: '10px', padding: '11px 8px', fontWeight: '600', fontSize: '0.82rem', cursor: 'pointer',
-        }}>
-          Fechar
-        </button>
+  <div class="rodape">
+    <div class="row">
+      <div>
+        <div class="info-label">Matrícula</div>
+        <div class="info-valor">${mat}</div>
       </div>
     </div>
-  )
+    ${cpf ? `
+    <div>
+      <div class="info-label">CPF</div>
+      <div class="info-valor-sm">${cpf}</div>
+    </div>` : ''}
+  </div>
+
+  <div class="barra-inf"></div>
+</div>
+
+${fotoSrc ? '<div class="dica">Arraste a foto para ajustar o enquadramento</div>' : ''}
+
+<script>
+  // Drag para ajustar posição da foto no círculo
+  const img = document.getElementById('fotoImg')
+  if (img) {
+    let dragging = false
+    let startY = 0
+    let currentPos = 50 // percentual top
+
+    img.style.objectPosition = 'center ' + currentPos + '%'
+
+    img.addEventListener('mousedown', e => { dragging = true; startY = e.clientY; e.preventDefault() })
+    img.addEventListener('touchstart', e => { dragging = true; startY = e.touches[0].clientY; e.preventDefault() }, { passive: false })
+
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return
+      const dy = e.clientY - startY
+      currentPos = Math.max(0, Math.min(100, currentPos - dy * 0.3))
+      img.style.objectPosition = 'center ' + currentPos + '%'
+      startY = e.clientY
+    })
+    document.addEventListener('touchmove', e => {
+      if (!dragging) return
+      const dy = e.touches[0].clientY - startY
+      currentPos = Math.max(0, Math.min(100, currentPos - dy * 0.3))
+      img.style.objectPosition = 'center ' + currentPos + '%'
+      startY = e.touches[0].clientY
+    }, { passive: false })
+
+    document.addEventListener('mouseup',  () => dragging = false)
+    document.addEventListener('touchend', () => dragging = false)
+  }
+</script>
+</body></html>`
+
+  const win = window.open('', '_blank')
+  win.document.write(html)
+  win.document.close()
 }
